@@ -1,0 +1,14 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>IAM Web PKCE Client</title><link rel="stylesheet" href="/style.css"><script type="module" src="/app.js"></script></head>
+<body data-client="iam-web">
+<main><p class="label">SYNTHETIC LOCAL LAB / WEB</p><h1>Identity, not passwords.</h1>
+<p>This public client redirects to Keycloak using authorization code + S256 PKCE. Credentials are entered only at the identity provider.</p>
+<nav><a href="/mobile.html">Mobile-style client</a></nav>
+<section><button id="login">Sign in with Keycloak</button><button id="enterprise">Enterprise OIDC sign in</button><button id="refresh" disabled>Rotate refresh token</button><button id="logout" disabled>Sign out</button></section>
+<p id="status" role="status">Not signed in</p><pre id="profile" aria-label="API profile"></pre>
+<label for="organization">Active organization</label><select id="organization" disabled><option value="">Sign in to select a tenant</option></select>
+<section class="tenant-actions"><button id="resources" disabled>List resources</button><button id="members" disabled>List members</button><button id="submissions" disabled>My submissions</button><button id="audit" disabled>Tenant audit</button><button id="sessions" disabled>My sessions</button></section>
+<pre id="result" aria-label="API result" aria-live="polite">Select a tenant to demonstrate its authorization boundary.</pre>
+<p class="note">Local fixtures: alice / alice123 (platform admin), bob / bob123. Enterprise: enterprise.bob / enterprise-bob123. These are synthetic, not real secrets. Tokens remain in memory and are never displayed. Reloading this page clears them.</p>
+</main></body></html>

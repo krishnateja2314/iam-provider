@@ -1,0 +1,46 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Build
+dist/
+build/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+
+# Test coverage
+coverage/
+
+# Docker volumes (local data)
+pgdata/
+keycloak-data/
+
+# Compiled
+*.js.map
+*.d.ts
+
+# Temporary
+tmp/
+temp/
+
+# Kilo
+.kilo/

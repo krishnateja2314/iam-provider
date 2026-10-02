@@ -1,0 +1,116 @@
+{
+  "realm": "iam-platform",
+  "enabled": true,
+  "sslRequired": "none",
+  "registrationAllowed": false,
+  "resetPasswordAllowed": false,
+  "editUsernameAllowed": false,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "bruteForceProtected": true,
+  "accessTokenLifespan": 300,
+  "ssoSessionIdleTimeout": 1800,
+  "ssoSessionMaxLifespan": 36000,
+  "revokeRefreshToken": true,
+  "refreshTokenMaxReuse": 0,
+  "roles": {"realm": [{"name": "platform-admin", "description": "Platform authority only; never grants tenant membership"}]},
+  "clientScopes": [
+    {
+      "name": "basic", "protocol": "openid-connect", "attributes": {"include.in.token.scope": "false"},
+      "protocolMappers": [
+        {"name": "subject", "protocol": "openid-connect", "protocolMapper": "oidc-sub-mapper", "config": {"access.token.claim": "true", "id.token.claim": "true", "introspection.token.claim": "true"}}
+      ]
+    },
+    {
+      "name": "profile", "protocol": "openid-connect", "attributes": {"include.in.token.scope": "true"},
+      "protocolMappers": [
+        {"name": "username", "protocol": "openid-connect", "protocolMapper": "oidc-usermodel-property-mapper", "config": {"user.attribute": "username", "claim.name": "preferred_username", "jsonType.label": "String", "access.token.claim": "true", "id.token.claim": "true", "userinfo.token.claim": "true"}},
+        {"name": "given-name", "protocol": "openid-connect", "protocolMapper": "oidc-usermodel-property-mapper", "config": {"user.attribute": "firstName", "claim.name": "given_name", "jsonType.label": "String", "access.token.claim": "true", "id.token.claim": "true", "userinfo.token.claim": "true"}},
+        {"name": "family-name", "protocol": "openid-connect", "protocolMapper": "oidc-usermodel-property-mapper", "config": {"user.attribute": "lastName", "claim.name": "family_name", "jsonType.label": "String", "access.token.claim": "true", "id.token.claim": "true", "userinfo.token.claim": "true"}},
+        {"name": "full-name", "protocol": "openid-connect", "protocolMapper": "oidc-full-name-mapper", "config": {"access.token.claim": "true", "id.token.claim": "true", "userinfo.token.claim": "true"}}
+      ]
+    },
+    {
+      "name": "email", "protocol": "openid-connect", "attributes": {"include.in.token.scope": "true"},
+      "protocolMappers": [
+        {"name": "email", "protocol": "openid-connect", "protocolMapper": "oidc-usermodel-property-mapper", "config": {"user.attribute": "email", "claim.name": "email", "jsonType.label": "String", "access.token.claim": "true", "id.token.claim": "true", "userinfo.token.claim": "true"}},
+        {"name": "email-verified", "protocol": "openid-connect", "protocolMapper": "oidc-usermodel-property-mapper", "config": {"user.attribute": "emailVerified", "claim.name": "email_verified", "jsonType.label": "boolean", "access.token.claim": "true", "id.token.claim": "true", "userinfo.token.claim": "true"}}
+      ]
+    },
+    {
+      "name": "iam-api",
+      "protocol": "openid-connect",
+      "attributes": {"include.in.token.scope": "true"},
+      "protocolMappers": [
+        {"name": "api-audience", "protocol": "openid-connect", "protocolMapper": "oidc-audience-mapper", "config": {"included.client.audience": "iam-backend", "access.token.claim": "true", "id.token.claim": "false"}},
+        {"name": "platform-roles", "protocol": "openid-connect", "protocolMapper": "oidc-usermodel-realm-role-mapper", "config": {"claim.name": "realm_access.roles", "jsonType.label": "String", "multivalued": "true", "access.token.claim": "true", "id.token.claim": "false"}}
+      ]
+    }
+  ],
+  "clients": [
+    {
+      "clientId": "iam-backend", "name": "API audience, no interactive login", "enabled": true,
+      "protocol": "openid-connect", "publicClient": false,
+      "clientAuthenticatorType": "client-secret", "secret": "dev-client-secret-change-me",
+      "standardFlowEnabled": false, "directAccessGrantsEnabled": false, "serviceAccountsEnabled": false
+    },
+    {
+      "clientId": "iam-web", "enabled": true, "protocol": "openid-connect", "publicClient": true,
+      "standardFlowEnabled": true, "directAccessGrantsEnabled": false, "serviceAccountsEnabled": false,
+      "redirectUris": ["http://localhost:5173/web.html"], "webOrigins": ["http://localhost:5173"],
+      "attributes": {"pkce.code.challenge.method": "S256", "use.refresh.tokens": "true", "post.logout.redirect.uris": "http://localhost:5173/web.html"},
+      "defaultClientScopes": ["basic", "profile", "email", "iam-api"], "fullScopeAllowed": true
+    },
+    {
+      "clientId": "iam-mobile", "name": "Responsive mobile-style PKCE browser demo, not a native app", "enabled": true,
+      "protocol": "openid-connect", "publicClient": true, "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false, "serviceAccountsEnabled": false,
+      "redirectUris": ["http://localhost:5173/mobile.html"], "webOrigins": ["http://localhost:5173"],
+      "attributes": {"pkce.code.challenge.method": "S256", "use.refresh.tokens": "true", "post.logout.redirect.uris": "http://localhost:5173/mobile.html"},
+      "defaultClientScopes": ["basic", "profile", "email", "iam-api"], "fullScopeAllowed": true
+    },
+    {
+      "clientId": "iam-provider-admin", "enabled": true, "protocol": "openid-connect", "publicClient": false,
+      "clientAuthenticatorType": "client-secret", "secret": "dev-provider-admin-secret",
+      "standardFlowEnabled": false, "directAccessGrantsEnabled": false, "serviceAccountsEnabled": true,
+      "fullScopeAllowed": false, "defaultClientScopes": [],
+      "attributes": {"client_credentials.use_refresh_token": "false"},
+      "protocolMappers": [{"name": "bounded-admin-roles", "protocol": "openid-connect", "protocolMapper": "oidc-usermodel-client-role-mapper", "config": {"usermodel.clientRoleMapping.clientId": "realm-management", "claim.name": "resource_access.realm-management.roles", "jsonType.label": "String", "multivalued": "true", "access.token.claim": "true", "id.token.claim": "false"}}]
+    },
+    {
+      "clientId": "iam-test", "name": "DISABLED: opt-in local password-grant integration tests only",
+      "enabled": false, "protocol": "openid-connect", "publicClient": false,
+      "clientAuthenticatorType": "client-secret", "secret": "dev-test-client-secret",
+      "standardFlowEnabled": false, "directAccessGrantsEnabled": true, "serviceAccountsEnabled": false,
+      "attributes": {"access.token.lifespan": "60", "client.session.max.lifespan": "3", "client.session.idle.timeout": "3"},
+      "defaultClientScopes": ["basic", "profile", "email", "iam-api"], "fullScopeAllowed": true
+    }
+  ],
+  "clientScopeMappings": {
+    "realm-management": [{"client": "iam-provider-admin", "roles": ["manage-users", "view-users", "query-users"]}]
+  },
+  "identityProviders": [
+    {
+      "alias": "enterprise", "displayName": "Synthetic Enterprise OIDC", "providerId": "oidc", "enabled": true,
+      "trustEmail": false, "storeToken": false, "addReadTokenRoleOnCreate": false,
+      "firstBrokerLoginFlowAlias": "first broker login",
+      "config": {
+        "clientId": "iam-enterprise-broker", "clientSecret": "dev-enterprise-broker-secret",
+        "authorizationUrl": "http://localhost:8180/realms/iam-enterprise/protocol/openid-connect/auth",
+        "tokenUrl": "http://keycloak:8080/realms/iam-enterprise/protocol/openid-connect/token",
+        "userInfoUrl": "http://keycloak:8080/realms/iam-enterprise/protocol/openid-connect/userinfo",
+        "jwksUrl": "http://keycloak:8080/realms/iam-enterprise/protocol/openid-connect/certs",
+        "issuer": "http://localhost:8180/realms/iam-enterprise", "useJwksUrl": "true", "validateSignature": "true",
+        "defaultScope": "openid profile email", "syncMode": "IMPORT", "pkceEnabled": "true", "pkceMethod": "S256"
+      }
+    }
+  ],
+  "users": [
+    {"id": "70000000-0000-0000-0000-000000000001", "username": "alice", "email": "alice@example.com", "firstName": "Alice", "lastName": "Johnson", "enabled": true, "emailVerified": true, "realmRoles": ["platform-admin"], "credentials": [{"type": "password", "value": "alice123", "temporary": false}]},
+    {"id": "70000000-0000-0000-0000-000000000002", "username": "bob", "email": "bob@example.com", "firstName": "Bob", "lastName": "Smith", "enabled": true, "emailVerified": true, "credentials": [{"type": "password", "value": "bob123", "temporary": false}], "federatedIdentities": [{"identityProvider": "enterprise", "userId": "71000000-0000-0000-0000-000000000002", "userName": "enterprise.bob"}]},
+    {"id": "70000000-0000-0000-0000-000000000003", "username": "charlie", "email": "charlie@example.com", "firstName": "Charlie", "lastName": "Davis", "enabled": true, "emailVerified": true, "credentials": [{"type": "password", "value": "charlie123", "temporary": false}]},
+    {"id": "70000000-0000-0000-0000-000000000004", "username": "diana", "email": "diana@example.com", "firstName": "Diana", "lastName": "Martinez", "enabled": true, "emailVerified": true, "credentials": [{"type": "password", "value": "diana123", "temporary": false}]},
+    {"id": "70000000-0000-0000-0000-000000000005", "username": "eve", "email": "eve@example.com", "firstName": "Eve", "lastName": "Wilson", "enabled": true, "emailVerified": true, "credentials": [{"type": "password", "value": "eve123", "temporary": false}]},
+    {"username": "service-account-iam-provider-admin", "enabled": true, "serviceAccountClientId": "iam-provider-admin", "clientRoles": {"realm-management": ["manage-users", "view-users", "query-users"]}}
+  ]
+}

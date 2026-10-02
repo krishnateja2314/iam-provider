@@ -1,0 +1,19 @@
+{
+  "realm": "iam-enterprise", "enabled": true, "sslRequired": "none",
+  "registrationAllowed": false, "resetPasswordAllowed": false, "bruteForceProtected": true,
+  "revokeRefreshToken": true, "refreshTokenMaxReuse": 0,
+  "accessTokenLifespan": 300,
+  "clients": [{
+    "clientId": "iam-enterprise-broker", "enabled": true, "protocol": "openid-connect",
+    "publicClient": false, "clientAuthenticatorType": "client-secret", "secret": "dev-enterprise-broker-secret",
+    "standardFlowEnabled": true, "directAccessGrantsEnabled": false, "serviceAccountsEnabled": false,
+    "redirectUris": ["http://localhost:8180/realms/iam-platform/broker/enterprise/endpoint"],
+    "attributes": {"pkce.code.challenge.method": "S256"}, "defaultClientScopes": ["basic", "profile", "email"]
+  }],
+  "users": [{
+    "id": "71000000-0000-0000-0000-000000000002", "username": "enterprise.bob",
+    "email": "enterprise.bob@example.com", "firstName": "Enterprise", "lastName": "Bob",
+    "enabled": true, "emailVerified": true,
+    "credentials": [{"type": "password", "value": "enterprise-bob123", "temporary": false}]
+  }]
+}

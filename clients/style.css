@@ -1,0 +1,14 @@
+:root { font-family: system-ui, sans-serif; color: #152a32; background: #edf3f1; }
+body { margin: 0; border-top: 6px solid #17645b; }
+main { max-width: 48rem; margin: 6vh auto; padding: 1.5rem; }
+h1 { font-family: Georgia, serif; font-size: clamp(2.2rem, 6vw, 3.6rem); font-weight: 500; margin: 1rem 0; }
+p { line-height: 1.65; } .label { font-size: .75rem; letter-spacing: .14em; font-weight: 700; }
+nav { margin: 1.5rem 0; } a { color: #17645b; }
+section { display: flex; flex-wrap: wrap; gap: .7rem; }
+button { padding: .9rem 1.1rem; background: #17645b; color: white; border: 1px solid #17645b; border-radius: .25rem; font: inherit; cursor: pointer; }
+button:disabled { opacity: .45; cursor: default; } button:focus-visible, a:focus-visible { outline: 3px solid #9d6500; outline-offset: 3px; }
+select { display: block; width: 100%; max-width: 100%; margin: .5rem 0 1rem; padding: .8rem; font: inherit; background: white; border: 1px solid #17645b; }
+.tenant-actions { margin-bottom: 1rem; }
+pre { white-space: pre-wrap; overflow-wrap: anywhere; background: white; padding: 1rem; min-height: 2rem; border-left: 3px solid #17645b; }
+.note { font-size: .85rem; color: #4b6169; } .mobile main { max-width: 26rem; } .mobile section { flex-direction: column; }
+@media (max-width: 480px) { main { margin: 2vh auto; } section { flex-direction: column; } }
