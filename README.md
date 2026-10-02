@@ -1,5 +1,9 @@
 # Secure Multi-Tenant Identity and Access Platform
 
+Repository: https://github.com/krishnateja2314/iam-provider
+
+Verified prototype source baseline: `0d232ecbd567a3482d0ebbc213d39e908e064ee1`.
+
 Academic modular-monolith prototype for two synthetic learning organizations.
 Authentication is delegated to Keycloak; tenant membership, resource ownership,
 Casbin authorization, provisioning, consent and audit are application responsibilities.
@@ -111,4 +115,6 @@ equality never silently merges their application accounts.
 Core human identity and tenant access are the priority. Full SCIM, optional machine
 identity/delegation, and the optional controlled performance experiment are not claimed
 complete. The traceability matrix records remaining verification and implementation gaps.
-No repository URL or commit is invented; publishing Git is left to the project team.
+The prototype and its demo documentation are published in the repository linked above.
+Local `.env` files, dependencies, compiled output, backups and historical personal reports
+are not included in the published commit.

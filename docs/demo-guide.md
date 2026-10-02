@@ -443,5 +443,8 @@ Close with:
 > privacy boundaries, reproduced the baseline and attached actual allow/deny evidence.
 > The remaining optional extensions are explicitly deferred rather than presented as complete.
 
-Submit the actual GitHub URL and pushed commit hash. The project name is
+Published repository: https://github.com/krishnateja2314/iam-provider.
+Verified source baseline: `0d232ecbd567a3482d0ebbc213d39e908e064ee1`.
+Use `git rev-parse HEAD` to record the latest submitted commit (which may also include
+documentation-only updates). The project name is
 `iam-provider`, but it integrates Keycloak; it does not implement a custom identity provider.

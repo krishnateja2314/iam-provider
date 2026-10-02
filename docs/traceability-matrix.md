@@ -53,7 +53,7 @@ not mean passed. Paths below are relative to `backend/`, unless otherwise specif
 | Suspension/reactivation | Explicit platform status route and atomic service | Archived orgs cannot simply reactivate; no tenant data bypass. |
 | Purpose consent/fields | Append-only latest grant; service and HTTP grant/withdrawal checks | Public userId/displayName minimal; bio needs profile-sharing, not analytics consent. |
 | Malformed federation/token claims | Production signed-token shape validation | Explicit provider fixture linking is not email-based application merging. |
-| Reproducible startup | New `iam-firststart` volumes/import/migrate/seed/browser proof; isolated153pass6skip | Same current build context, not a certified Git checkout because no remote/commit exists yet. |
+| Reproducible startup | New `iam-firststart` volumes/import/migrate/seed/browser proof; isolated153pass6skip | Verified build context subsequently published at github.com/krishnateja2314/iam-provider, source baseline0d232ec; an independent clone-based run has not been performed. |
 
 ## Final Evidence Summary
 

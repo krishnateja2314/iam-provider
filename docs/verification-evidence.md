@@ -114,8 +114,10 @@ The isolated database's final suite at 15:49:54Z reported **153 passed, 6 skippe
 0 failed**. The six live cases were intentionally not enabled on that stack; they
 passed on the main stack as recorded above. The isolated stack was stopped and
 the original project's services were restored healthy. Neither set of volumes was deleted.
-This tests first-start behavior from the current build context, not a Git clone:
-there is still no repository URL/commit to certify.
+This tested first-start behavior from the build context, not a Git clone. The verified
+source was subsequently published at https://github.com/krishnateja2314/iam-provider,
+source-baseline commit `0d232ecbd567a3482d0ebbc213d39e908e064ee1`. An independent
+clone-based verification was not performed as part of that earlier run.
 
 ## Failures Found and Corrected During Verification
 
