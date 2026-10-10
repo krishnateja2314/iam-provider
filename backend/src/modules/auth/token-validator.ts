@@ -52,6 +52,11 @@ export async function validateAccessToken(
   token: string,
   options: TokenValidationOptions
 ): Promise<jose.JWTPayload> {
+  const introspectionEnabled = process.env.KEYCLOAK_INTROSPECTION !== 'false';
+  if (process.env.NODE_ENV === 'production' && !introspectionEnabled) {
+    throw new Error('KEYCLOAK_INTROSPECTION=false is not allowed in production');
+  }
+
   const keySet = getJwks();
 
   try {
@@ -107,7 +112,7 @@ export async function validateAccessToken(
       throw new AuthenticationError('Token authorized party mismatch');
     }
     providerSessionId(payload);
-    if (process.env.KEYCLOAK_INTROSPECTION === 'true') {
+    if (introspectionEnabled) {
       await introspectAccessToken(token, payload);
     }
 

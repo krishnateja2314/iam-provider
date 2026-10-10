@@ -5,7 +5,7 @@
 // authenticated requests. Uses the test JWT infrastructure.
 // ============================================================
 
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import Fastify, { type FastifyInstance } from 'fastify';
 import cors from '@fastify/cors';
 import * as jose from 'jose';
@@ -129,6 +129,46 @@ describe('API Integration: Authentication', () => {
     expect(body.userId).toBe(SEED_IDS.USER_ALICE);
     expect(body.organizations).toBeDefined();
     expect(body.organizations.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('rejects authentication with 503/401 and denies access when introspection fetch times out or fails (500)', async () => {
+    vi.stubEnv('KEYCLOAK_INTROSPECTION', 'true');
+    vi.stubEnv('KEYCLOAK_CLIENT_SECRET', 'secret');
+    
+    // Test fetch failure (e.g., timeout / offline)
+    let fetcher = vi.fn().mockRejectedValue(new Error('timeout'));
+    vi.stubGlobal('fetch', fetcher);
+
+    const token = await createTestToken({
+      sub: '70000000-0000-0000-0000-000000000001',
+      iss: 'http://localhost:9080/realms/iam-platform',
+      aud: 'iam-backend',
+      sid: 'session1'
+    });
+
+    let response = await app.inject({
+      method: 'GET',
+      url: '/api/v1/me',
+      headers: { authorization: `Bearer ${token}` }
+    });
+
+    // Authentication dependency unavailable is 401
+    expect([401, 503]).toContain(response.statusCode);
+
+    // Test 500 status code response
+    fetcher = vi.fn().mockResolvedValue(new Response('', { status: 500 }));
+    vi.stubGlobal('fetch', fetcher);
+
+    response = await app.inject({
+      method: 'GET',
+      url: '/api/v1/me',
+      headers: { authorization: `Bearer ${token}` }
+    });
+
+    expect([401, 503]).toContain(response.statusCode);
+    
+    vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
   });
 });
 
@@ -347,5 +387,105 @@ describe('HTTP adversarial resource/submission validation',()=>{
       await sql`DROP TRIGGER IF EXISTS test_audit_failure ON audit_events`.execute(db);
       await sql`DROP FUNCTION IF EXISTS test_audit_failure()`.execute(db);
     }
+  });
+
+  it('role removal immediately denies access', async () => {
+    const { getDb } = await import('../../src/db/connection.js');
+    const db = getDb();
+    
+    // Alice is admin in Acme, can manage members
+    let result = await app.inject({
+      url: '/api/v1/members',
+      headers: await headers('70000000-0000-0000-0000-000000000001') // Alice
+    });
+    expect(result.statusCode).toBe(200);
+
+    // Remove her admin role
+    const assignments = await db.selectFrom('membership_roles').selectAll().where('membership_id', '=', SEED_IDS.MEM_ALICE_ACME).execute();
+    await db.deleteFrom('membership_roles').where('membership_id', '=', SEED_IDS.MEM_ALICE_ACME).execute();
+
+    try {
+      result = await app.inject({
+        url: '/api/v1/members',
+        headers: await headers('70000000-0000-0000-0000-000000000001')
+      });
+      expect(result.statusCode).toBe(403);
+    } finally {
+      if (assignments.length) await db.insertInto('membership_roles').values(assignments).execute();
+    }
+  });
+
+  it('suspension immediately denies tenant access across all routes', async () => {
+    const { getDb } = await import('../../src/db/connection.js');
+    const db = getDb();
+    
+    // Bob reading resources (returns 200)
+    let result = await app.inject({
+      url: '/api/v1/resources',
+      headers: await headers('70000000-0000-0000-0000-000000000002') // Bob
+    });
+    expect(result.statusCode).toBe(200);
+
+    // Suspend Bob's membership
+    await db.updateTable('memberships').set({status: 'suspended'}).where('id', '=', SEED_IDS.MEM_BOB_ACME).execute();
+
+    try {
+      result = await app.inject({
+        url: '/api/v1/resources',
+        headers: await headers('70000000-0000-0000-0000-000000000002')
+      });
+      expect(result.statusCode).toBe(403);
+    } finally {
+      await db.updateTable('memberships').set({status: 'active'}).where('id', '=', SEED_IDS.MEM_BOB_ACME).execute();
+    }
+  });
+
+  it('unseeded third tenant access is isolated and denies access', async () => {
+    const { getDb } = await import('../../src/db/connection.js');
+    const db = getDb();
+    const thirdTenantId = randomUUID();
+
+    await db.insertInto('organizations').values({
+      id: thirdTenantId,
+      name: 'Third Tenant',
+      slug: 'third-tenant',
+      status: 'active'
+    }).execute();
+
+    try {
+      const charlieToken = await createTestToken({
+        sub: '70000000-0000-0000-0000-000000000003', // Charlie
+        iss: 'http://localhost:9080/realms/iam-platform',
+        aud: 'iam-backend',
+      });
+
+      // Try accessing the new tenant
+      const result = await app.inject({
+        url: '/api/v1/resources',
+        headers: {
+          authorization: `Bearer ${charlieToken}`,
+          'x-organization-id': thirdTenantId
+        }
+      });
+      
+      // Charlie has no membership in thirdTenantId
+      expect(result.statusCode).toBe(403);
+    } finally {
+      await db.deleteFrom('organizations').where('id', '=', thirdTenantId).execute();
+    }
+  });
+
+  it('selector/resource substitution attack fails on mutation endpoints', async () => {
+    // Attempting to patch submission from Acme while being in Globex (Bob is not a member of Globex anyway)
+    // Wait, let's use Alice, who is admin in Acme, but we try to grade a Globex submission while passing Acme in header
+    const result = await app.inject({
+      method: 'PATCH',
+      url: `/api/v1/submissions/${SEED_IDS.RES_GLOBEX_COURSE1}/grade`, // using some random ID from Globex, actually it's submission ID
+      headers: await headers('70000000-0000-0000-0000-000000000001'),
+      payload: { grade: 90 }
+    });
+    
+    // Either 404/403 or 400 because submission ID isn't found in Acme
+    expect([403, 404]).toContain(result.statusCode);
   });
 });

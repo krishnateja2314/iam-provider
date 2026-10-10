@@ -18,7 +18,8 @@ const app=Fastify({
 async function start():Promise<void> {
   if(!process.env.JWT_ISSUER||!process.env.JWT_AUDIENCE||!process.env.DATABASE_URL) throw new Error('JWT_ISSUER, JWT_AUDIENCE and DATABASE_URL are required');
   await app.register(helmet);
-  await app.register(cors,{origin:['http://localhost:5173','http://localhost:3100'],methods:['GET','POST','PATCH','DELETE'],allowedHeaders:['Authorization','Content-Type','X-Organization-ID','X-Correlation-ID','Idempotency-Key']});
+  const origins = process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(',') : ['http://localhost:5173','http://localhost:3100'];
+  await app.register(cors,{origin:origins,methods:['GET','POST','PATCH','DELETE'],allowedHeaders:['Authorization','Content-Type','X-Organization-ID','X-Correlation-ID','Idempotency-Key']});
   app.addHook('onRequest',correlationIdHook);
   initJwks(process.env.JWT_ISSUER);
   registerRoutes(app);

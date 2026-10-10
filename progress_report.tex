@@ -1,0 +1,70 @@
+\documentclass{article}
+\usepackage[utf8]{inputenc}
+\usepackage{geometry}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\geometry{a4paper, margin=1in}
+
+\title{Progress Report: Secure Multi-Tenant Identity, Authorization and Enterprise Access Platform}
+\author{Krishna Teja (CS23BTECH11028) \and Jaya Prakash (CS23BTECH11015)}
+\date{October 2026}
+
+\begin{document}
+
+\maketitle
+
+\section*{A. Proposed Approach}
+Our project tackles the challenge of building a secure, multi-tenant learning platform where users can have different roles across various organizations. To address this, we decided to use a modular monolith architecture. This approach is better than managing multiple microservices because it reduces the complexity for our small team while still keeping the code organized in logical modules like authentication, user management, and resources.
+
+For identity management, we chose to integrate Keycloak (version 26.8.0). Building a custom identity provider is risky and takes too much time, which our mentors pointed out as a major risk. Keycloak handles OIDC login, token issuance, and session lifecycles out of the box, allowing us to focus on the actual business rules. 
+
+For authorization, we evaluated Keycloak's built-in policies but found them awkward for our tenant-specific and relationship-based rules (like "an instructor can only grade courses they teach"). Therefore, we integrated Casbin as our declarative authorization engine. This allows us to define clear, testable role-based policies while keeping the tenant and relationship facts in our application database (PostgreSQL). We don't merge accounts by email; instead, we strictly use the issuer and subject to uniquely identify users.
+
+\section*{B. System Design}
+The system consists of several interacting components deployed via Docker Compose to ensure a reproducible environment:
+\begin{itemize}
+    \item \textbf{Clients:} We have lightweight web and mobile-style browser clients. They use Authorization Code Flow with PKCE to authenticate securely. The client never handles passwords directly; everything goes through Keycloak.
+    \item \textbf{Identity Provider (Keycloak):} Manages user credentials, issues JWT access tokens, and handles enterprise federation via an OIDC broker. It runs on its own private PostgreSQL database.
+    \item \textbf{Backend API (Fastify):} A Node.js server that validates incoming tokens using Keycloak's JWKS. It uses custom middleware to map the token's subject to our internal user ID and verifies the requested tenant context.
+    \item \textbf{Database (PostgreSQL):} Stores application state including users, organizations, memberships, learning resources, submissions, consent, and queryable audit logs. It enforces data integrity using unique constraints and composite foreign keys to prevent cross-tenant data leaks.
+\end{itemize}
+
+\textbf{Workflow Details:} A user logs in via the client and gets an access token from Keycloak. The client sends this token and an \texttt{X-Organization-ID} header to the Fastify API. The backend verifies the token signature and checks if the token is an access token (rejecting ID tokens). Then, it checks if the user has an active membership in that organization. After that, Casbin evaluates if the user's role permits the requested action, with explicit deny rules taking precedence. Finally, the API performs the action and logs an audit event in the same database transaction.
+
+\section*{C. Technical Feasibility}
+\textbf{Tools and Frameworks:} 
+\begin{itemize}
+    \item Node.js (v24.21.0), Fastify (v5.12.5) for the backend API.
+    \item PostgreSQL (v16.15) with Kysely for type-safe database interactions and migrations.
+    \item Keycloak (v26.8.0) for identity management and session handling.
+    \item Casbin (v5.51.1) for declarative RBAC authorization.
+    \item Docker and Docker Compose for reproducible local infrastructure.
+    \item Vitest (v5.0.3) and Playwright for automated security and browser testing.
+\end{itemize}
+
+\textbf{Feasibility and Challenges:} The design is technically feasible as it relies on mature, well-supported open-source tools. One major challenge was handling cross-tenant data leaks. We mitigated this by ensuring every database query is strictly filtered by both the resource ID and the selected organization ID. 
+
+Another challenge was ensuring that token revocation works properly. We found that a password reset in Keycloak does not automatically revoke an existing access session. So incident response must explicitly trigger a logout-all to be safe. We also had to make sure that local database failures (like an audit log failing to insert) roll back the entire transaction, which we achieved using PostgreSQL transactions.
+
+\section*{D. Implementation Plan}
+\textbf{Completed Work:}
+\begin{itemize}
+    \item Infrastructure setup with Docker Compose, separating the application database from Keycloak's database.
+    \item Database migrations with composite constraints, organization quotas, and initial synthetic seed data (e.g., Acme and Globex organizations).
+    \item Fastify backend with strict JWT token validation, tenant context middleware, and transactional audit logging.
+    \item Casbin integration for declarative RBAC policies, handling 48 different role/resource/action combinations.
+    \item API endpoints for learning resources, submissions (including grading), member management, and consent tracking.
+    \item Automated security test suite (159 tests passing, covering authorization, tenant isolation, and live Keycloak session lifecycle).
+    \item Real-browser PKCE login verification using Playwright.
+\end{itemize}
+
+\textbf{Ongoing and Pending Tasks:}
+\begin{itemize}
+    \item \textit{Ongoing:} Refining the documentation, including the final traceability matrix and demo guides.
+    \item \textit{Pending:} Implementation of optional extensions such as application machine identities (service principals), user-delegated agents, and full SCIM provisioning.
+    \item \textit{Pending:} Further hardening for production deployment, such as secret management and TLS configuration (currently everything runs locally for the academic prototype).
+\end{itemize}
+
+\textbf{Expected Outcomes:} The expected outcome is a fully functional, secure prototype demonstrating proper tenant isolation, robust authorization, and clear audit trails, ready for final evaluation and demonstration to our mentors. We have a working baseline that proves our approach is sound.
+
+\end{document}

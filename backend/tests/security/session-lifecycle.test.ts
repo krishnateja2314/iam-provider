@@ -28,6 +28,22 @@ describe('Uncached fail-closed provider session authentication', () => {
     await expect(validateAccessToken(token, options)).rejects.toThrow('inactive');
     expect(fetcher).toHaveBeenCalledTimes(2);
   });
+
+  it('rejects access and returns 503/401 when introspection fetch times out', async () => {
+    configure();
+    const fetcher = vi.fn().mockRejectedValue(new Error('timeout'));
+    vi.stubGlobal('fetch', fetcher);
+    const token = await createTestToken({ claims: { sub: 'subject', sid: 'session' } });
+    await expect(validateAccessToken(token, options)).rejects.toThrow('Provider session verification unavailable');
+  });
+
+  it('rejects access when introspection fetch returns 500 error', async () => {
+    configure();
+    const fetcher = vi.fn().mockResolvedValue(new Response('', { status: 500 }));
+    vi.stubGlobal('fetch', fetcher);
+    const token = await createTestToken({ claims: { sub: 'subject', sid: 'session' } });
+    await expect(validateAccessToken(token, options)).rejects.toThrow('Provider session verification unavailable');
+  });
   it.each([
     { active: 'true', sub: 'subject', sid: 'session' },
     { active: true, sub: 'other', sid: 'session' },
@@ -52,6 +68,12 @@ describe('Uncached fail-closed provider session authentication', () => {
     for (let i = 0; i < 3; i++) await expect(introspectAccessToken('token', { sub: 'subject', iss: issuer, sid: 'session' })).rejects.toThrow();
     vi.stubEnv('KEYCLOAK_CLIENT_SECRET', '');
     await expect(introspectAccessToken('token', { sub: 'subject', iss: issuer, sid: 'session' })).rejects.toThrow('credentials');
+  });
+  
+  it('enforces secure configuration for introspection in production', async () => {
+    vi.stubEnv('NODE_ENV', 'production');
+    vi.stubEnv('KEYCLOAK_INTROSPECTION', 'false');
+    await expect(validateAccessToken('token', options)).rejects.toThrow('KEYCLOAK_INTROSPECTION=false is not allowed in production');
   });
   it('cannot revoke a session belonging to another user', async () => {
     configure();
@@ -186,8 +208,12 @@ describe.skipIf(process.env.RUN_KEYCLOAK_TESTS !== '1')('Live Keycloak issued-to
     await resetProviderSessions(token.subject);
     await rejectedAfterRevocation(token.access_token, started, 'admin-logout-all');
   });
-  it('genuine admin password reset replaces credentials but does not revoke previously issued access tokens', async () => {
+  it('genuine admin password reset replaces credentials but leaves current sessions valid (routine reset)', async () => {
+    // Document routine reset versus compromise response:
+    // A password reset is a routine recovery action. The provider configuration leaves
+    // existing sessions valid. A compromise response must explicitly logout-all.
     const token = await login();
+    const started = performance.now();
     const newPassword = `${randomUUID()}Aa1!`;
     await admin(`/users/${encodeURIComponent(token.subject)}/reset-password`, 'PUT', { type: 'password', value: newPassword, temporary: false });
     const oldLogin = await grant({ grant_type: 'password', username: token.username, password, scope: 'openid' });
@@ -201,6 +227,10 @@ describe.skipIf(process.env.RUN_KEYCLOAK_TESTS !== '1')('Live Keycloak issued-to
     expect(issuedTokenStatus).toBe(200);
     await expect(introspectAccessToken(token.access_token, jose.decodeJwt(token.access_token))).resolves.toBeUndefined();
     console.info(JSON.stringify({ event: 'password-reset-evidence', oldCredentialsAccepted: false, newCredentialsAccepted: true, previouslyIssuedAccessTokenStatus: issuedTokenStatus }));
+    
+    // Retest logout-all as the required compromise response
+    await resetProviderSessions(token.subject);
+    await rejectedAfterRevocation(token.access_token, started, 'admin-logout-all');
   });
   it('expired refresh session is rejected and its issued access token becomes inactive', async () => {
     const token = await login();
@@ -210,18 +240,29 @@ describe.skipIf(process.env.RUN_KEYCLOAK_TESTS !== '1')('Live Keycloak issued-to
     await inactive(token.access_token);
   }, 15000);
   it('refresh rotation rejects reuse and invalidates successor refresh and issued access tokens', async () => {
+    // Neither refresh replay nor password reset effects can be generalized beyond the recorded provider configuration.
+    // The assertions below show pinned realm/client options and real tokens behaving according to this provider's rules.
     const token = await login();
     const first = await grant({ grant_type: 'refresh_token', refresh_token: token.refresh_token });
     expect(first.ok).toBe(true);
     const rotated = await first.json() as { access_token: string; refresh_token: string };
     expect(rotated.refresh_token !== token.refresh_token).toBe(true);
-    expect((await grant({ grant_type: 'refresh_token', refresh_token: token.refresh_token })).status).toBe(400);
+    
+    // Separate assertions:
+    // 1. old-refresh reuse is rejected
+    const oldRefreshResponse = await grant({ grant_type: 'refresh_token', refresh_token: token.refresh_token });
+    expect(oldRefreshResponse.status).toBe(400);
+    
+    // 2. successor-refresh is rejected
     // Observe reuse handling before any explicit logout, so it cannot masquerade as family revocation.
-    const successorRefresh = await grant({ grant_type: 'refresh_token', refresh_token: rotated.refresh_token });
-    expect(successorRefresh.status).toBe(400);
+    const successorRefreshResponse = await grant({ grant_type: 'refresh_token', refresh_token: rotated.refresh_token });
+    expect(successorRefreshResponse.status).toBe(400);
+    
+    // 3. successor-access is rejected
     const successorAccessStatus = (await api(rotated.access_token)).status;
     expect(successorAccessStatus).toBe(401);
+    
     await inactive(rotated.access_token);
-    console.info(JSON.stringify({ event: 'refresh-reuse-evidence', reusedRefreshStatus: 400, successorRefreshStatus: successorRefresh.status, successorIssuedAccessTokenStatus: successorAccessStatus }));
+    console.info(JSON.stringify({ event: 'refresh-reuse-evidence', reusedRefreshStatus: oldRefreshResponse.status, successorRefreshStatus: successorRefreshResponse.status, successorIssuedAccessTokenStatus: successorAccessStatus }));
   });
 });

@@ -25,7 +25,7 @@ async function permit(request:FastifyRequest,reply:FastifyReply,resource:string,
 }
 
 export function registerRoutes(app:FastifyInstance):void {
-  app.get('/health',async()=>({status:'ok',service:'iam-platform'}));
+  app.get('/health',async()=>({status:'ok',service:process.env.SERVICE_NAME ?? 'iam-platform'}));
   app.get('/ready',async()=> {await sql`SELECT 1`.execute(getDb());return {status:'ready'};});
   for (const path of ['/api/v1/me','/api/v1/organizations']) app.get(path,{preHandler:[authenticationHook]},async request=>{
     const organizations=await listUserOrganizations(request.auth!.userId);
@@ -124,9 +124,8 @@ export function registerRoutes(app:FastifyInstance):void {
     if(!await permit(request,reply,'member','manage'))return;
     return createMember({...request.body as {userId:string;roleName?:string},actorUserId:request.auth!.userId,correlationId:request.correlationId!,organizationId:request.tenant!.organizationId});
   });
-  app.post('/api/v1/consents',{preHandler:[authenticationHook],schema:{body:{type:'object',additionalProperties:false,required:['purpose','granted'],properties:{purpose:{type:'string',enum:['profile-sharing','analytics']},granted:{type:'boolean'}}}}},async(request,reply)=>{
-    const organizationId=request.headers['x-organization-id'];
-    if(!isUuid(organizationId)){await auditRequest(request,'consent.manage','deny','Invalid tenant selector');return reply.code(400).send({error:'Valid X-Organization-ID required'});}
+  app.post('/api/v1/consents',{preHandler:tenantHooks,schema:{body:{type:'object',additionalProperties:false,required:['purpose','granted'],properties:{purpose:{type:'string',enum:['profile-sharing','analytics']},granted:{type:'boolean'}}}}},async(request,reply)=>{
+    const organizationId=request.tenant!.organizationId;
     // Service validates membership; withdrawal is possible even while suspended.
     return recordConsent({...request.body as {purpose:'profile-sharing'|'analytics';granted:boolean},actorUserId:request.auth!.userId,correlationId:request.correlationId!,organizationId});
   });

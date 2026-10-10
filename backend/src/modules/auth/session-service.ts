@@ -11,7 +11,8 @@ export function providerSessionId(claims: JWTPayload): string | undefined {
   return (sid ?? state) as string | undefined;
 }
 
-function realmUrl(issuer = process.env.JWT_ISSUER || 'http://localhost:8180/realms/iam-platform'): URL {
+function realmUrl(issuer = process.env.JWT_ISSUER): URL {
+  if (!issuer) throw new Error('JWT_ISSUER is not configured');
   const url = new URL(issuer);
   if (process.env.KEYCLOAK_INTERNAL_URL) {
     const internal = new URL(process.env.KEYCLOAK_INTERNAL_URL);

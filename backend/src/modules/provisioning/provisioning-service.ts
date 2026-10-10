@@ -29,6 +29,10 @@ export async function auditMutation(trx: Transaction<Database>, context: Mutatio
   }).execute();
 }
 
+// Note: This service exclusively provisions state in our local PostgreSQL database.
+// External identity provider (IdP) modifications (like realm or client creation)
+// are explicitly not handled during atomic database provisioning here.
+// Any necessary IdP setup must be handled separately or downstream.
 export async function lockOrganization(trx: Transaction<Database>, organizationId: string) {
   const org = await trx.selectFrom('organizations').selectAll().where('id', '=', organizationId).forUpdate().executeTakeFirst();
   if (!org) throw new ProvisioningError('not_found', 'Organization not found');
