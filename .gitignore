@@ -44,3 +44,13 @@ temp/
 
 # Kilo
 .kilo/
+
+# Documents, PDFs and generated reports
+*.pdf
+/progress_report.html
+/week3_progress_report.html
+/progress_report.tex
+/report.tex
+/week1_design_report.tex
+/submission/
+

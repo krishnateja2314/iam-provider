@@ -3,64 +3,203 @@
 \usepackage{geometry}
 \usepackage{graphicx}
 \usepackage{hyperref}
+\usepackage{booktabs}
+\usepackage{array}
 \geometry{a4paper, margin=1in}
 
-\title{Progress Report: Secure Multi-Tenant Identity, Authorization and Enterprise Access Platform (Week 3)}
-\author{Krishna Teja (CS23BTECH11028) \and Jaya Prakash (CS23BTECH11015)}
+\title{\textbf{Progress Report: A Secure Multi-Tenant Identity, Authorization and Enterprise Access Platform (Week 3)}}
+\author{Krishna Teja (CS23BTECH11028) \and Jaya Prakash (CS23BTECH11015) \\ Department of Computer Science and Engineering \\ Indian Institute of Technology Hyderabad}
 \date{October 2026}
 
 \begin{document}
 
 \maketitle
 
-\section*{A. Proposed Approach}
-Our approach relies on a modular monolith architecture. This balances development velocity with strong isolation, avoiding the overhead of managing distributed microservices. We chose Keycloak (v26.8.0) as our Identity Provider to handle authentication, OIDC flows, and token lifecycles. Building a custom IdP is risky, and Keycloak provides industry-standard security out of the box.
+\section*{1. Project Overview and Problem Statement}
+Our project is to build a secure multi-tenant identity, authorization and access control platform for an educational SaaS system. In this kind of system, learners, instructors and administrators belong to different organizations. A user is not limited to only one organization. For example, a single global user like Alice can be an administrator in Acme Learning Corp, but she can also be a learner in Globex University. Her administrator privileges in Acme must never leak into Globex.
 
-For authorization, we use Casbin as our policy engine. While Keycloak has built-in authorization, it proved too rigid for our dynamic, tenant-specific, and relationship-based rules (like "instructors can only grade their assigned courses"). Casbin lets us define clear Role-Based Access Control (RBAC) rules, while our application database (PostgreSQL v16.15) acts as the source of truth for dynamic relationships and active tenant memberships.
+The core technical problems we are solving in this project are:
+\begin{enumerate}
+    \item \textbf{Identity Separation:} Keeping global user accounts separate from external login identities (like Keycloak or Google) and separate from tenant memberships and profiles.
+    \item \textbf{Strict Tenant Isolation:} Making sure that users can only access resources of organizations where they have an active membership. Even if a user guesses a valid resource UUID of another organization, the system must not return it.
+    \item \textbf{Fine-Grained Relationship Authorization:} Simple Role-Based Access Control (RBAC) is not enough. For example, an instructor should only be allowed to grade submissions for courses they are actually assigned to teach.
+    \item \textbf{Token and Session Lifecycle:} Ensuring that access tokens are verified strictly on every request, refresh tokens are rotated and protected from replay, and session revocations take effect quickly.
+    \item \textbf{Privacy and Audit Logging:} Capturing queryable audit logs for all security actions, ensuring audit failures roll back sensitive operations, and respecting purpose-specific user consent.
+\end{enumerate}
 
-\section*{B. System Design}
-The system architecture includes the following major components, all deployed via Docker Compose for reproducibility:
+\section*{A. Proposed Approach and Methodology}
+\subsection*{Modular Monolith Architecture}
+In our initial discussions, microservices were considered, but based on mentor feedback and practical constraints of two students in an eight-week timeline, we chose a modular monolith. Deploying many independent microservices adds network latency, distributed transaction issues, complex Docker networking, and unnecessary operational burden. 
+
+Our backend runs as a single Fastify application in Node.js, but the code is divided into clear logical modules: authentication adapter, user management, organization and membership, authorization engine, learning resources, provisioning, privacy and consent, and audit logging. All modules share a single PostgreSQL database instance, which allows us to use relational integrity constraints and ACID transactions for atomic operations.
+
+\subsection*{Reuse-First Identity Provider Strategy}
+Building custom authentication, cryptography, or a custom identity provider is very risky and prone to security vulnerabilities. Therefore, we followed the mentor advice and integrated Keycloak (version 26.8.0). Keycloak handles user credential storage, password hashing, OpenID Connect (OIDC) login flows, RSA token signing, refresh token rotation, and identity federation. 
+
+We do not build custom login pages that handle passwords. Instead, authentication is completely delegated to Keycloak using the OAuth2 Authorization Code flow with S256 PKCE. Our application only receives and validates the resulting JSON Web Tokens (JWT).
+
+\subsection*{Declarative Application Authorization Engine}
+Keycloak provides built-in authorization services (User-Managed Access / UMA), but we evaluated it and found it awkward for our dynamic application needs. Keycloak policies work well for static API endpoints, but they struggle with dynamic tenant-specific memberships and relationship rules like ``instructor teaches course''. Furthermore, encoding tenant roles directly into JWT claims causes issues because if an admin removes a user's role, the token remains valid until it expires.
+
+Therefore, we selected Casbin (version 5.51.1) as our declarative authorization engine. Casbin runs inside our backend process using a simple interface: \texttt{authorize(subject, organization, resource, action, context)}. We store application facts (active memberships, current tenant roles, teaching assignments) in PostgreSQL, and Casbin evaluates role permissions on demand. We configured Casbin with a deny-overrides model, meaning an explicit deny rule always wins over an allow rule, even if a user holds multiple roles.
+
+\subsection*{Strict Identity Keying Without Email Merging}
+Many web applications automatically merge accounts if an incoming token has the same email address as an existing user. We decided this is dangerous because email addresses on external providers can be unverified, changed, or recycled, which leads to account takeover. In our platform, external identities are uniquely keyed by \texttt{(issuer, subject)}. A global user account is linked to this composite key, and account merging by email is strictly rejected.
+
+\section*{B. System Design and Architecture}
+\subsection*{Overall Architecture}
+The system consists of five services deployed together using Docker Compose:
 \begin{itemize}
-    \item \textbf{Clients:} Lightweight web and mobile-style browser interfaces. They use Authorization Code Flow with PKCE. The clients never handle user passwords directly.
-    \item \textbf{Identity Provider (Keycloak):} Manages credentials, enterprise federation (OIDC brokering), and issues JSON Web Tokens (JWTs).
-    \item \textbf{Backend API (Fastify):} A Node.js backend that validates JWT signatures, enforces uncached introspection, and maps the provider subject to our internal users.
-    \item \textbf{Database (PostgreSQL):} Stores application state including organizations, memberships, learning resources, and audit logs. It enforces strict data integrity using unique constraints, quotas, and composite foreign keys to prevent cross-tenant data leaks.
+    \item \textbf{Frontend Clients:} Lightweight browser clients for web (\texttt{iam-web}) and mobile-style viewports (\texttt{iam-mobile}). They initiate PKCE authentication and hold tokens in JavaScript memory only.
+    \item \textbf{Identity Provider (Keycloak 26.8.0):} Manages the \texttt{iam-platform} realm and an upstream \texttt{iam-enterprise} realm for enterprise federation testing. Runs with its own private database.
+    \item \textbf{Backend API (Fastify 5.12.5):} The modular monolith that exposes REST endpoints, verifies access tokens, checks tenant memberships, and enforces Casbin policies.
+    \item \textbf{Application Database (PostgreSQL 16.15):} Stores users, organizations, memberships, roles, learning resources, submissions, consent, and audit logs.
+    \item \textbf{Keycloak Database (PostgreSQL 16.15):} A completely separate private database dedicated to Keycloak data.
 \end{itemize}
 
-\textbf{Workflow:} When a user accesses the platform, they authenticate via Keycloak and receive an access token. The client sends this token along with an \texttt{X-Organization-ID} header to our API. The backend strictly validates the token and checks if the user has an active membership in the requested tenant. Casbin then evaluates the user's role against the requested resource. The API executes the action and commits an audit log within the same database transaction.
+Below is the text-based architecture diagram of the system components and their connections:
 
-\section*{C. Technical Feasibility}
-\textbf{Tools and Infrastructure:} 
+\begin{verbatim}
++-----------------------+       +------------------------------------+
+|  Web / Mobile Browser | <---> |       Keycloak 26.8.0 (IdP)        |
+|  Clients (PKCE Flow)  |       |  (Platform & Enterprise Realms)    |
++-----------------------+       +-----------------+------------------+
+           |                                      |
+           | Access Token (Bearer)                | JWKS & Uncached
+           | + X-Organization-ID                  | Introspection
+           v                                      v
++--------------------------------------------------------------------+
+|                      Fastify Modular Backend                       |
+|                                                                    |
+|  [correlationIdHook] -> [authenticationHook] -> [tenantContextHook] |
+|                                |                                   |
+|                     [Casbin Authorization]                         |
+|                     (Deny-Overrides Model)                         |
++--------------------------------+-----------------------------------+
+                                 |
+                                 | Kysely Type-Safe Queries
+                                 | (Dual-Filtered by Org ID)
+                                 v
++--------------------------------------------------------------------+
+|                  Application PostgreSQL Database                   |
+|  - Users, Identities, Profiles       - Resources & Submissions     |
+|  - Organizations & Memberships       - Purpose Consents            |
+|  - Tenant Roles & Assignments        - Transactional Audit Events  |
++--------------------------------------------------------------------+
+\end{verbatim}
+
+\subsection*{Detailed Request Workflow}
+Here is the step-by-step workflow when a client makes a request to a protected endpoint:
+\begin{enumerate}
+    \item The client starts a login by creating a cryptographically random verifier, state, and nonce. It hashes the verifier using SHA-256 to create the PKCE code challenge and redirects the browser to Keycloak.
+    \item The user logs in at Keycloak. Keycloak redirects back to the client callback with an authorization code.
+    \item The client sends the authorization code along with the original code verifier to Keycloak's token endpoint. Keycloak validates the verifier and returns an ID token, an access token, and a refresh token.
+    \item The client validates the ID token signature, issuer, audience, and nonce. It stores tokens in memory only (never in localStorage).
+    \item For an API call, the client sends the access token in the \texttt{Authorization: Bearer} header and the desired organization UUID in the \texttt{X-Organization-ID} header.
+    \item In Fastify, \texttt{correlationIdHook} assigns a unique correlation ID to the request for tracing.
+    \item \texttt{authenticationHook} validates the token using JOSE against Keycloak's JWKS endpoint. It checks RS256 algorithm, issuer, audience (\texttt{iam-backend}), expiration, and verifies that the token type is \texttt{Bearer}. If an ID token is provided as an API credential, it is immediately rejected with HTTP 401.
+    \item If introspection is enabled, the backend performs an uncached online introspection call to Keycloak to ensure the token and session have not been revoked.
+    \item The backend resolves the token subject to an internal \texttt{user\_id}.
+    \item \texttt{tenantContextHook} treats the \texttt{X-Organization-ID} header as untrusted input. It queries PostgreSQL to verify that the user has an active membership in that organization. If the user is inactive or not a member, access is rejected with HTTP 403.
+    \item The route handler calls the authorization engine: \texttt{authorize(subject, organization, resource, action, context)}.
+    \item If the resource is a submission and action is grade, the engine checks the \texttt{teaching\_assignments} table to ensure the instructor actually teaches that course in that organization.
+    \item Casbin evaluates the user's tenant roles against policy rules using deny-overrides.
+    \item The database query executes with dual filtering: it always includes both the resource ID and the \texttt{organization\_id}. This prevents cross-tenant access even if resource IDs are known.
+    \item If the operation is a mutation (such as grading a submission), the database update and the audit log insert happen inside the exact same PostgreSQL transaction. If the audit log fails, the mutation rolls back.
+    \item The API returns the response with the correlation ID in the header.
+\end{enumerate}
+
+\subsection*{Inputs and Outputs Summary}
 \begin{itemize}
-    \item Node.js (v24.21.0), Fastify (v5.12.5)
-    \item PostgreSQL (v16.15) with Kysely for migrations
-    \item Keycloak (v26.8.0)
-    \item Casbin (v5.51.1)
-    \item Docker and Docker Compose
-    \item Vitest and Playwright for security and browser testing
+    \item \textbf{Inputs:} HTTP Authorization header with Bearer token, \texttt{X-Organization-ID} header with tenant UUID, \texttt{X-Correlation-ID} header (optional), request parameters (UUIDs), and validated JSON request bodies.
+    \item \textbf{Outputs:} Standard HTTP status codes (200 for success, 400 for bad input, 401 for unauthenticated, 403 for unauthorized/tenant denied, 404 for resource not found in tenant, 409 for conflict, 503 for service unavailable), JSON response bodies, and queryable audit log records in the database.
 \end{itemize}
 
-\textbf{Challenges and Mitigation:} One of the major challenges we addressed this week was ensuring the safety of our introspection logic. We added strict environment validation so that introspection cannot be accidentally disabled in production (failing closed). We also verified that local PostgreSQL transactions handle application provisioning atomically, keeping it isolated from any external IdP modifications. Another insight was that a password reset does not automatically revoke existing Keycloak access sessions, so we documented that incident response must include an explicit \texttt{logout-all}.
-
-\section*{D. Implementation Plan}
-\textbf{Completed Work (Weeks 1-3):}
+\section*{C. Technical Feasibility and Challenges}
+\subsection*{Technology Stack}
+The tools and frameworks used in the project are:
 \begin{itemize}
-    \item Full Docker Compose infrastructure setup with private databases.
-    \item Integration of Keycloak for OIDC PKCE login and enterprise federation.
-    \item Fastify backend with robust JWT validation, strict tenant context middleware, and database-backed Casbin authorization.
-    \item Addressed all P0/P1 mentor feedback: removed hardcoded configurations, enforced introspection safety, and added comprehensive tenant boundary tests.
-    \item Created a script (\texttt{verify-test-independence.mjs}) to prove that bypassing our security guards correctly causes test failures.
-    \item Implemented and verified 159 automated tests covering authorization, tenant isolation, and live session lifecycles.
-    \item Verified that a completely clean clone can stand up the entire environment and pass all tests automatically.
+    \item \textbf{Runtime \& Server:} Node.js (pinned to 24.21.0-alpine in Docker) and Fastify (v5.12.5).
+    \item \textbf{Database \& Driver:} PostgreSQL (v16.15-alpine), \texttt{pg} driver (v8.23.1), and Kysely (v0.29.6) for type-safe query building and migrations.
+    \item \textbf{Identity Provider:} Keycloak (v26.8.0), official container from Quay.io.
+    \item \textbf{Authorization Engine:} Casbin (v5.51.1) for declarative RBAC policy evaluation.
+    \item \textbf{Cryptographic Token Validation:} \texttt{jose} (v6.2.12) for RS256 signature verification and claim validation.
+    \item \textbf{Testing Frameworks:} Vitest (v5.0.3) for backend and database security tests, Playwright (v1.63.0) for automated browser verification.
+    \item \textbf{Infrastructure:} Docker Compose with private internal networking for database security.
 \end{itemize}
 
-\textbf{Ongoing and Pending Tasks:}
+\subsection*{Technical Challenges and Realized Solutions}
+During our implementation and testing over the past weeks, we encountered several real-world security challenges and solved them:
+\begin{enumerate}
+    \item \textbf{Password Reset vs Token Revocation:} We initially thought resetting a user's password in Keycloak would immediately invalidate their active access tokens. When writing live lifecycle tests, we discovered that Keycloak password reset updates credentials for future logins, but existing SSO sessions and active access tokens remain valid until they expire. To handle security compromises properly, we learned that incident response must explicitly trigger a \texttt{logout-all} call to revoke active sessions.
+    \item \textbf{Introspection Safety and Fail-Closed Behavior:} The mentor noted that having a flag to disable introspection was risky. We updated our configuration so \texttt{KEYCLOAK\_INTROSPECTION} defaults to true. In production mode (\texttt{NODE\_ENV=production}), attempting to turn off introspection throws a fatal startup error. We also added tests simulating Keycloak downtime; when introspection times out or fails, the API fails closed and rejects requests with HTTP 503.
+    \item \textbf{Cross-Tenant Selector and Resource Substitution:} We tested attack scenarios where an authenticated user of Organization A sends Organization A in the header, but puts Organization B's course ID in the URL. If the backend only checks the header membership, it might accidentally fetch Organization B's course if the query only searches by resource ID. We solved this by making all database queries include both \texttt{id} and \texttt{organization\_id}, ensuring that foreign resources return HTTP 404.
+    \item \textbf{Atomicity of Audit Logs and Sensitive Mutations:} A security log must never drop events for successful actions. For operations like grading a submission or provisioning an organization, we run the operation and the audit insertion inside a single PostgreSQL database transaction. If the audit table triggers an error, the grade or provisioning operation automatically rolls back.
+    \item \textbf{Refresh Token Replay Invalidation:} We configured Keycloak with \texttt{revokeRefreshToken=true} and \texttt{refreshTokenMaxReuse=0}. Our automated tests proved that if an attacker attempts to replay an old refresh token, Keycloak rejects it and invalidates the entire refresh token family, causing subsequent access token introspection to fail with HTTP 401.
+\end{enumerate}
+
+\section*{D. Implementation Plan, Progress and Experimental Evidence}
+\subsection*{Completed Work (Weeks 1 to 3)}
+We have implemented and verified all core milestones requested by the mentor:
 \begin{itemize}
-    \item \textit{Ongoing:} Formalizing our evaluation protocol and freezing the core security baseline.
-    \item \textit{Pending:} Implementing optional extensions, such as application machine identities and user delegation.
-    \item \textit{Pending:} Finalizing the performance optimization experiment (comparing sequential lookups vs. composite indexing/batched queries against a frozen baseline).
+    \item \textbf{M1 (Identity Model):} Global user entity, external authentication identities with unique \texttt{(issuer, subject)}, organization memberships, and organization-scoped roles. Migrations include composite foreign keys and database triggers preventing cross-tenant role assignments.
+    \item \textbf{M2 (Authentication & Clients):} Full OAuth2 Authorization Code flow with S256 PKCE. Both web (\texttt{web.html}) and mobile-style (\texttt{mobile.html}) responsive clients are implemented. Upstream enterprise federation is configured and tested via an OIDC broker realm.
+    \item \textbf{M3 (Token & Session Lifecycle):} Strict token verification (signature, issuer, audience, expiration, subject, Bearer type). Uncached Keycloak introspection for session validity. Automated tests for logout, session revocation, refresh rotation, and replay rejection.
+    \item \textbf{M4 (Authorization):} Casbin integration with 48 declarative role/resource/action combinations plus 11 hard-boundary tests (total 59 authorization tests). Enforces instructor teaching assignments for grading and draft publication restrictions.
+    \item \textbf{M5 (Provisioning):} Transactional organization creation with actor-scoped idempotency keys, duplicate retry protection, payload conflict detection, membership/resource quotas, and organization suspension/reactivation.
+    \item \textbf{M6 (Privacy & Audit):} Purpose-specific consent (profile sharing and analytics), consent withdrawal even when suspended, allowlisted profile projection (omitting bio if consent is not granted), and queryable audit logging.
+    \item \textbf{M7 (Security Testing):} A comprehensive test suite with 159 automated tests passing with 0 failures across 7 test suites.
 \end{itemize}
 
-\textbf{Expected Outcomes:} The expected outcome is a fully functional, highly secure, and well-documented prototype demonstrating strong tenant isolation and declarative authorization. The core framework is now stable, and we are preparing for final optimizations and the evaluation phase.
+\subsection*{Experimental Results Summary}
+\begin{table}[h!]
+\centering
+\begin{tabular}{lll}
+\toprule
+\textbf{Test Category} & \textbf{Test File} & \textbf{Result} \\
+\midrule
+Identity \& Membership & \texttt{t01-t02-identity-membership.test.ts} & 8 passed \\
+Token Validation & \texttt{t03-t04-t09-token-validation.test.ts} & 41 passed \\
+Authorization Policies & \texttt{t05-t08-authorization.test.ts} & 59 passed \\
+Audit Logging & \texttt{t10-audit.test.ts} & 6 passed \\
+Provisioning \& Privacy & \texttt{provisioning-privacy.test.ts} & 9 passed \\
+API Integration & \texttt{api.test.ts} & 20 passed \\
+Live Session Lifecycle & \texttt{session-lifecycle.test.ts} & 16 passed \\
+\midrule
+\textbf{Total Test Suite} & \textbf{All 7 Test Suites} & \textbf{159 passed (0 failed, 0 skipped)} \\
+\bottomrule
+\end{tabular}
+\caption{Automated Security Test Suite Execution Summary}
+\end{table}
+
+Additional experimental evidence:
+\begin{itemize}
+    \item \textbf{Token Revocation Latency:} We measured the exact time from calling provider logout or session revocation until the next API request using that token is denied. The measured times were 62 ms for provider logout, 65 ms for own-session API revocation, and 38 ms for admin logout-all (maximum 65 ms across samples).
+    \item \textbf{Dependency Security Audit:} Running \texttt{npm audit} on the backend dependencies reported exactly 0 vulnerabilities.
+    \item \textbf{Test Independence Verification:} We created a standalone verification script (\texttt{scripts/verify-test-independence.mjs}) that deliberately breaks the tenant membership check in middleware and skips signature verification in the token validator. Running this script confirms that our test suite actively catches these breakages and fails, proving our tests are independent and meaningful.
+    \item \textbf{Browser PKCE Verification:} Our Playwright automated script successfully completes real PKCE logins, enterprise broker redirects, tenant switching, refresh rotation, and session revocation using installed Microsoft Edge.
+\end{itemize}
+
+\subsection*{Ongoing and Pending Tasks}
+\begin{itemize}
+    \item \textbf{Ongoing:} Freezing the evaluation criteria and protocol for the final assessment (documented in \texttt{docs/evaluation-protocol.md}).
+    \item \textbf{Pending (Optional W7/W8 Extensions):} Implementing application machine identities (service accounts) using Keycloak client credentials flow, and user-on-behalf-of delegation.
+    \item \textbf{Pending (Performance Experiment):} Testing if composite database indexing or batched relationship queries reduce p95 authorization latency compared to our frozen baseline workload.
+    \item \textbf{Pending (Hardening):} Adding TLS/HTTPS certificates and production secret management for final deployment.
+\end{itemize}
+
+\section*{E. Responses to Recent Mentor Feedback}
+In the Week 2 review, our mentor provided specific items that we have directly resolved:
+\begin{itemize}
+    \item \textbf{Repository Access (P0):} The mentor reported a 404 error accessing our GitHub repository. We verified our local Git commits, set up remote tracking, and pushed all code and documentation to \url{https://github.com/krishnateja2314/iam-provider}. We also noted the requirement to ensure the repository visibility is set to public.
+    \item \textbf{Introspection Safety (P0):} We updated token validation so introspection defaults to true and throws an error in production if disabled. We also added integration tests verifying that Keycloak network timeouts cause the API to fail closed with HTTP 503.
+    \item \textbf{Centralized Tenant Guards (P0):} We audited all routes in \texttt{src/routes.ts} to ensure every tenant endpoint goes through \texttt{tenantContextHook}. We added tests proving that an unseeded third organization cannot be accessed without explicit membership, and that selector/resource ID substitutions fail.
+    \item \textbf{Local Constants Parameterization (P1):} We removed hardcoded URLs and service names, replacing them with configurable environment variables (\texttt{CORS\_ORIGIN}, \texttt{SERVICE\_NAME}, etc.).
+    \item \textbf{Lifecycle Assertions (P1):} We separated assertions in \texttt{session-lifecycle.test.ts} for old refresh reuse, successor refresh rejection, and successor access rejection. We documented the difference between routine password reset and compromise response.
+    \item \textbf{Provisioning Atomicity (P1):} We verified that application provisioning (organization, system roles, admin membership, idempotency record, and audit log) happens in a single PostgreSQL transaction.
+    \item \textbf{Test Independence (P1):} We built \texttt{scripts/verify-test-independence.mjs} to demonstrate that breaking guards causes test failures.
+    \item \textbf{Frozen Evaluation Protocol (FB004):} We documented our frozen acceptance criteria in \texttt{docs/evaluation-protocol.md}.
+    \item \textbf{Mentor Questions:} We wrote comprehensive answers to all 8 mentor review questions in \texttt{docs/mentor-responses.md}.
+\end{itemize}
 
 \end{document}
