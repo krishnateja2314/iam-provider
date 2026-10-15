@@ -12,6 +12,7 @@ Casbin authorization, provisioning, consent and audit are application responsibi
 
 - [Whole repository report](docs/repository-report.md): architecture, modules, security decisions and mentor explanations.
 - [Demo guide](docs/demo-guide.md): reproducible tests and evaluator walkthrough.
+- [Presentation guide](docs/presentation-guide.md): plain-English demo script, UI tour, numbers to quote and likely questions.
 - [Requirements matrix](docs/traceability-matrix.md): implemented versus verified requirements.
 - [Evaluation Protocol](docs/evaluation-protocol.md): Frozen acceptance criteria and protocol.
 - [Mentor Responses](docs/mentor-responses.md): Responses to the 8 mentor review questions.

@@ -1,14 +1,65 @@
 <!doctype html>
 <html lang="en">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>IAM Mobile-Style PKCE Client</title><link rel="stylesheet" href="/style.css"><script type="module" src="/app.js"></script></head>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>iam/lab · Mobile client</title><link rel="stylesheet" href="/style.css"><script type="module" src="/app.js"></script></head>
 <body data-client="iam-mobile" class="mobile">
-<main><p class="label">SYNTHETIC LOCAL LAB / MOBILE</p><h1>Your identity. One tap.</h1>
-<p>Responsive browser demonstration of a separate public PKCE client, not a native application or an embedded password form.</p>
-<nav><a href="/web.html">Web client</a></nav>
-<section><button id="login">Sign in with Keycloak</button><button id="enterprise">Enterprise OIDC sign in</button><button id="refresh" disabled>Rotate refresh token</button><button id="logout" disabled>Sign out</button></section>
-<p id="status" role="status">Not signed in</p><pre id="profile" aria-label="API profile"></pre>
-<label for="organization">Active organization</label><select id="organization" disabled><option value="">Sign in to select a tenant</option></select>
-<section class="tenant-actions"><button id="resources" disabled>List resources</button><button id="members" disabled>List members</button><button id="submissions" disabled>My submissions</button><button id="audit" disabled>Tenant audit</button><button id="sessions" disabled>My sessions</button></section>
-<pre id="result" aria-label="API result" aria-live="polite">Select a tenant to demonstrate its authorization boundary.</pre>
-<p class="note">Synthetic fixtures: bob / bob123; enterprise.bob / enterprise-bob123 at the enterprise provider. Tokens are memory-only. A production native app needs OS browser and verified app/universal redirect links.</p>
-</main></body></html>
+<header class="topbar">
+  <a class="brand" href="/web.html"><span class="brand-mark" aria-hidden="true"></span>iam<span class="slash">/</span>lab</a>
+  <nav class="switch" aria-label="Client"><a href="/web.html">Web</a><a href="/mobile.html" aria-current="page">Mobile</a></nav>
+  <p id="status" role="status" data-state="idle">Not signed in</p>
+</header>
+<main class="shell">
+  <section class="intro">
+    <p class="eyebrow">Mobile-style client · separate public PKCE client</p>
+    <h1>Same identity. <em>Different client.</em></h1>
+    <p class="lede">A responsive browser page registered as its own Keycloak client. It is not a native app and has no embedded password form.</p>
+  </section>
+  <div class="grid">
+    <div class="stack">
+      <section class="panel" aria-labelledby="session-title">
+        <h2 class="panel-title" id="session-title"><span class="step">01</span>Session</h2>
+        <div class="row">
+          <button id="login" class="btn primary">Sign in with Keycloak</button>
+          <button id="enterprise" class="btn">Enterprise SSO</button>
+        </div>
+        <div id="identity" class="identity" hidden></div>
+        <div class="row">
+          <button id="refresh" class="btn ghost" disabled>Rotate refresh token</button>
+          <button id="logout" class="btn ghost" disabled>Sign out</button>
+        </div>
+        <details class="raw"><summary>Raw <code>/me</code> response</summary><pre id="profile" aria-label="API profile"></pre></details>
+      </section>
+    </div>
+    <section class="panel console" aria-labelledby="request-title">
+      <h2 class="panel-title" id="request-title"><span class="step">02</span>Request</h2>
+      <div class="composer">
+        <label for="organization" class="header-key">X-Organization-ID</label>
+        <select id="organization" disabled><option value="">Sign in to select a tenant</option></select>
+      </div>
+      <div class="endpoints tenant-actions">
+        <button id="resources" class="endpoint" disabled><span class="verb">GET</span>/resources</button>
+        <button id="members" class="endpoint" disabled><span class="verb">GET</span>/members</button>
+        <button id="submissions" class="endpoint" disabled><span class="verb">GET</span>/submissions</button>
+        <button id="audit" class="endpoint" disabled><span class="verb">GET</span>/audit-events</button>
+        <button id="sessions" class="endpoint" disabled><span class="verb">GET</span>/sessions<span class="tag">no tenant</span></button>
+      </div>
+      <div id="verdict" class="verdict" data-outcome="none">
+        <p id="verdict-code" class="verdict-code">···</p>
+        <div class="verdict-body">
+          <p id="verdict-label" class="verdict-label">No request yet</p>
+          <p id="verdict-line" class="verdict-line">Pick an organization, then an endpoint.</p>
+        </div>
+      </div>
+      <div id="view" class="view"></div>
+      <details class="raw"><summary>Raw JSON response</summary><pre id="result" aria-label="API result" aria-live="polite">Select a tenant to demonstrate its authorization boundary.</pre></details>
+    </section>
+    <section class="panel" aria-labelledby="log-title">
+      <h2 class="panel-title" id="log-title"><span class="step">03</span>Decision log</h2>
+      <ol id="log" class="log"><li class="log-empty">Your requests show up here.</li></ol>
+    </section>
+  </div>
+  <footer class="note">
+    <p>Synthetic fixtures: <code>bob / bob123</code>; <code>enterprise.bob / enterprise-bob123</code> at the enterprise provider. Tokens are memory-only.</p>
+    <p>A production native app would use the OS browser and verified app or universal links for its redirect.</p>
+  </footer>
+</main>
+</body></html>
