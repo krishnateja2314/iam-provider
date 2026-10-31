@@ -24,6 +24,8 @@ export interface TenantContext {
   roles: string[];
   /** Membership status */
   membershipStatus: string;
+  /** Organization status (set by hooks that admit non-active tenants, e.g. consent withdrawal) */
+  organizationStatus?: string;
 }
 
 export interface RequestContext {
@@ -91,6 +93,18 @@ export class AuthorizationError extends AppError {
 export class TenantError extends AppError {
   constructor(message: string = 'Invalid organization context') {
     super(403, message, 'TENANT_ERROR');
+  }
+}
+
+/**
+ * An upstream dependency (identity provider, JWKS) could not answer.
+ * Distinct from AuthenticationError: the caller's credential was not judged invalid,
+ * the platform could not verify it. Maps to 503, never to an allow.
+ */
+export class DependencyError extends AppError {
+  constructor(message: string = 'Dependency unavailable') {
+    super(503, message, 'DEPENDENCY_UNAVAILABLE');
+    this.name = 'DependencyError';
   }
 }
 

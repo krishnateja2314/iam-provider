@@ -5,12 +5,14 @@ import { getDb } from './db/connection.js';
 import { authorize } from './modules/authorization/authorization-engine.js';
 import { recordAuditEvent, queryAuditEvents } from './modules/audit/audit-service.js';
 import { listUserOrganizations } from './modules/organization/membership-service.js';
-import { authenticationHook, tenantContextHook, auditRequest, UUID_PATTERN, isUuid } from './middleware.js';
+import { authenticationHook, tenantContextHook, ownMembershipHook, auditRequest, UUID_PATTERN, isUuid } from './middleware.js';
 import { provisionOrganization, setOrganizationStatus, createMember, ProvisioningError, lockOrganization } from './modules/provisioning/provisioning-service.js';
 import { getSharedProfile, recordConsent } from './modules/user/privacy-service.js';
 import { listProviderSessions, revokeProviderSession, resetProviderSessions } from './modules/auth/session-service.js';
 
 const tenantHooks = [authenticationHook,tenantContextHook];
+// Admits suspended members of the selected tenant; used only for consent withdrawal.
+const ownMembershipHooks = [authenticationHook,ownMembershipHook];
 const uuid = {type:'string',pattern:UUID_PATTERN};
 const idParams = (key:string) => ({type:'object',required:[key],additionalProperties:false,properties:{[key]:uuid}});
 
@@ -124,10 +126,13 @@ export function registerRoutes(app:FastifyInstance):void {
     if(!await permit(request,reply,'member','manage'))return;
     return createMember({...request.body as {userId:string;roleName?:string},actorUserId:request.auth!.userId,correlationId:request.correlationId!,organizationId:request.tenant!.organizationId});
   });
-  app.post('/api/v1/consents',{preHandler:tenantHooks,schema:{body:{type:'object',additionalProperties:false,required:['purpose','granted'],properties:{purpose:{type:'string',enum:['profile-sharing','analytics']},granted:{type:'boolean'}}}}},async(request,reply)=>{
-    const organizationId=request.tenant!.organizationId;
-    // Service validates membership; withdrawal is possible even while suspended.
-    return recordConsent({...request.body as {purpose:'profile-sharing'|'analytics';granted:boolean},actorUserId:request.auth!.userId,correlationId:request.correlationId!,organizationId});
+  app.post('/api/v1/consents',{preHandler:ownMembershipHooks,schema:{body:{type:'object',additionalProperties:false,required:['purpose','granted'],properties:{purpose:{type:'string',enum:['profile-sharing','analytics']},granted:{type:'boolean'}}}}},async(request,reply)=>{
+    const body=request.body as {purpose:'profile-sharing'|'analytics';granted:boolean};
+    // A grant is an ordinary tenant action: active membership/org and a Casbin allow are required.
+    // Withdrawal of the caller's own consent is the single operation admitted under suspension;
+    // ownMembershipHook has already rejected foreign tenants and non-members.
+    if(body.granted && !await permit(request,reply,'consent','manage'))return;
+    return recordConsent({...body,actorUserId:request.auth!.userId,correlationId:request.correlationId!,organizationId:request.tenant!.organizationId});
   });
   app.get('/api/v1/profiles/:userId',{preHandler:tenantHooks,schema:{params:idParams('userId')}},async(request,reply)=>{
     if(!await permit(request,reply,'profile','read'))return;

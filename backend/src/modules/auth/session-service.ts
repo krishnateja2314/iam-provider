@@ -1,5 +1,5 @@
 import type { JWTPayload } from 'jose';
-import { AuthenticationError, AuthorizationError } from '../../common/types.js';
+import { AuthenticationError, AuthorizationError, DependencyError } from '../../common/types.js';
 
 export function providerSessionId(claims: JWTPayload): string | undefined {
   const { sid, session_state: state } = claims;
@@ -28,13 +28,14 @@ async function providerFetch(url: URL, init: RequestInit): Promise<Response> {
     if (!response.ok) throw new Error('Provider request failed');
     return response;
   } catch {
-    throw new AuthenticationError('Provider session verification unavailable');
+    // Network failure, timeout or provider HTTP error: dependency outage (503), not an invalid credential (401).
+    throw new DependencyError('Provider session verification unavailable');
   }
 }
 
 function credentials(admin = false): { client_id: string; client_secret: string } {
   const secret = admin ? process.env.KEYCLOAK_ADMIN_CLIENT_SECRET : process.env.KEYCLOAK_CLIENT_SECRET;
-  if (!secret) throw new AuthenticationError('Provider client credentials not configured');
+  if (!secret) throw new DependencyError('Provider client credentials not configured');
   return { client_id: (admin ? process.env.KEYCLOAK_ADMIN_CLIENT_ID : process.env.KEYCLOAK_CLIENT_ID) || (admin ? 'iam-provider-admin' : 'iam-backend'), client_secret: secret };
 }
 
@@ -47,7 +48,7 @@ export async function introspectAccessToken(token: string, verifiedClaims: JWTPa
     body: new URLSearchParams({ ...credentials(), token, token_type_hint: 'access_token' }),
   });
   let claims: JWTPayload;
-  try { claims = await response.json() as JWTPayload; } catch { throw new AuthenticationError('Malformed provider introspection'); }
+  try { claims = await response.json() as JWTPayload; } catch { throw new DependencyError('Malformed provider introspection'); }
   const expectedSession = providerSessionId(verifiedClaims);
   if (!claims || claims.active !== true || claims.sub !== verifiedClaims.sub || !expectedSession || providerSessionId(claims) !== expectedSession) {
     throw new AuthenticationError('Provider session is inactive or does not match token');
@@ -70,7 +71,7 @@ async function adminRequest(path: string, method = 'GET'): Promise<Response> {
     body: new URLSearchParams({ ...credentials(true), grant_type: 'client_credentials' }),
   });
   const token = await response.json() as { access_token?: unknown };
-  if (typeof token.access_token !== 'string') throw new AuthenticationError('Provider admin authentication failed');
+  if (typeof token.access_token !== 'string') throw new DependencyError('Provider admin authentication failed');
   realm.pathname = realm.pathname.replace('/realms/', '/admin/realms/') + path;
   return providerFetch(realm, { method, headers: { authorization: `Bearer ${token.access_token}` } });
 }

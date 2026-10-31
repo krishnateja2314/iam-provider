@@ -4,8 +4,9 @@
 
 import * as jose from 'jose';
 import type { AuthenticatedUser } from '../../common/types.js';
-import { AuthenticationError } from '../../common/types.js';
+import { AuthenticationError, DependencyError } from '../../common/types.js';
 import { introspectAccessToken, providerSessionId } from './session-service.js';
+import { introspectionDisableAllowed } from '../../config.js';
 
 let jwks: jose.JWTVerifyGetKey | null = null;
 
@@ -23,7 +24,7 @@ export function initJwks(issuerUrl: string, trustedJwks?: jose.JWTVerifyGetKey):
  */
 function getJwks(): jose.JWTVerifyGetKey {
   if (!jwks) {
-    throw new AuthenticationError('JWKS not initialized');
+    throw new DependencyError('JWKS not initialized');
   }
   return jwks;
 }
@@ -53,8 +54,9 @@ export async function validateAccessToken(
   options: TokenValidationOptions
 ): Promise<jose.JWTPayload> {
   const introspectionEnabled = process.env.KEYCLOAK_INTROSPECTION !== 'false';
-  if (process.env.NODE_ENV === 'production' && !introspectionEnabled) {
-    throw new Error('KEYCLOAK_INTROSPECTION=false is not allowed in production');
+  // Defence in depth behind the fatal startup check (config.ts): fixture mode is test-only.
+  if (!introspectionEnabled && !introspectionDisableAllowed()) {
+    throw new DependencyError('KEYCLOAK_INTROSPECTION=false is only allowed when NODE_ENV=test');
   }
 
   const keySet = getJwks();
@@ -118,8 +120,12 @@ export async function validateAccessToken(
 
     return payload;
   } catch (error) {
-    if (error instanceof AuthenticationError) {
+    if (error instanceof AuthenticationError || error instanceof DependencyError) {
       throw error;
+    }
+    // The key set could not be fetched in time: the credential was not judged invalid.
+    if (error instanceof jose.errors.JWKSTimeout) {
+      throw new DependencyError('Token signing keys unavailable');
     }
     if (error instanceof jose.errors.JWTExpired) {
       throw new AuthenticationError('Access token has expired');
@@ -137,7 +143,12 @@ export async function validateAccessToken(
     if (error instanceof jose.errors.JWSSignatureVerificationFailed) {
       throw new AuthenticationError('Invalid token signature');
     }
-    throw new AuthenticationError('Token validation failed');
+    // Any other JOSE error is a property of the token itself (malformed, unsupported, no matching key).
+    if (error instanceof jose.errors.JOSEError) {
+      throw new AuthenticationError('Token validation failed');
+    }
+    // Non-JOSE failures here are infrastructure (e.g. JWKS network error), not caller errors.
+    throw new DependencyError('Token verification dependency unavailable');
   }
 }
 

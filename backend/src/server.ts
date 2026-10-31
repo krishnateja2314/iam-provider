@@ -7,6 +7,7 @@ import { registerRoutes } from './routes.js';
 import { correlationIdHook, auditRequest } from './middleware.js';
 import { closeDb } from './db/connection.js';
 import { ProvisioningError } from './modules/provisioning/provisioning-service.js';
+import { assertSecurityConfig, ConfigurationError } from './config.js';
 
 dotenv.config();
 const app=Fastify({
@@ -16,12 +17,13 @@ const app=Fastify({
 });
 
 async function start():Promise<void> {
-  if(!process.env.JWT_ISSUER||!process.env.JWT_AUDIENCE||!process.env.DATABASE_URL) throw new Error('JWT_ISSUER, JWT_AUDIENCE and DATABASE_URL are required');
+  // Fatal: an unsafe security configuration must never bind a port or answer /health.
+  assertSecurityConfig();
   await app.register(helmet);
   const origins = process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(',') : ['http://localhost:5173','http://localhost:3100'];
   await app.register(cors,{origin:origins,methods:['GET','POST','PATCH','DELETE'],allowedHeaders:['Authorization','Content-Type','X-Organization-ID','X-Correlation-ID','Idempotency-Key']});
   app.addHook('onRequest',correlationIdHook);
-  initJwks(process.env.JWT_ISSUER);
+  initJwks(process.env.JWT_ISSUER!);
   registerRoutes(app);
   app.setErrorHandler(async(error,request,reply)=>{
     const known=error as {statusCode?:number;code?:string;message?:string;validation?:unknown};
@@ -37,4 +39,10 @@ async function start():Promise<void> {
   app.log.info({port},'IAM API ready');
 }
 for(const signal of ['SIGINT','SIGTERM'] as const)process.on(signal,async()=>{await app.close();await closeDb();process.exit(0);});
-start().catch(()=>{console.error('Backend startup failed; verify service configuration');process.exitCode=1;});
+start().catch(async error=>{
+  // Configuration problems name variables only, never values, so they are safe to print.
+  if(error instanceof ConfigurationError)for(const problem of error.problems)console.error(`Startup refused: ${problem}`);
+  else console.error('Backend startup failed; verify service configuration');
+  await app.close().catch(()=>undefined);
+  process.exit(1);
+});

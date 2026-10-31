@@ -15,7 +15,7 @@
     "test:watch": "vitest watch",
     "test:security": "vitest run --dir tests/security",
     "test:integration": "vitest run --dir tests/integration",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.test.json"
   },
   "dependencies": {
     "@fastify/cors": "11.3.0",

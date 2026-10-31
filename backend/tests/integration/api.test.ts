@@ -5,7 +5,7 @@
 // authenticated requests. Uses the test JWT infrastructure.
 // ============================================================
 
-import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, afterEach, vi } from 'vitest';
 import Fastify, { type FastifyInstance } from 'fastify';
 import cors from '@fastify/cors';
 import * as jose from 'jose';
@@ -131,44 +131,55 @@ describe('API Integration: Authentication', () => {
     expect(body.organizations.length).toBeGreaterThanOrEqual(1);
   });
 
-  it('rejects authentication with 503/401 and denies access when introspection fetch times out or fails (500)', async () => {
-    vi.stubEnv('KEYCLOAK_INTROSPECTION', 'true');
-    vi.stubEnv('KEYCLOAK_CLIENT_SECRET', 'secret');
-    
-    // Test fetch failure (e.g., timeout / offline)
-    let fetcher = vi.fn().mockRejectedValue(new Error('timeout'));
-    vi.stubGlobal('fetch', fetcher);
+  describe('provider dependency contract', () => {
+    afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
+    async function sessionToken() {
+      return createTestToken({
+        sub: '70000000-0000-0000-0000-000000000001',
+        iss: 'http://localhost:9080/realms/iam-platform',
+        aud: 'iam-backend',
+        claims: { sid: 'session1' },
+      });
+    }
+    function enableIntrospection() {
+      vi.stubEnv('KEYCLOAK_INTROSPECTION', 'true');
+      vi.stubEnv('KEYCLOAK_CLIENT_SECRET', 'test-only-secret');
+    }
 
-    const token = await createTestToken({
-      sub: '70000000-0000-0000-0000-000000000001',
-      iss: 'http://localhost:9080/realms/iam-platform',
-      aud: 'iam-backend',
-      sid: 'session1'
+    it.each([
+      ['network failure / timeout', () => vi.fn().mockRejectedValue(new Error('timeout'))],
+      ['provider HTTP 500', () => vi.fn().mockResolvedValue(new Response('', { status: 500 }))],
+      ['provider HTTP 503', () => vi.fn().mockResolvedValue(new Response('', { status: 503 }))],
+    ])('introspection %s denies with exactly 503 DEPENDENCY_UNAVAILABLE', async (_label, makeFetch) => {
+      enableIntrospection();
+      const fetcher = makeFetch();
+      vi.stubGlobal('fetch', fetcher);
+      const response = await app.inject({ method: 'GET', url: '/api/v1/me', headers: { authorization: `Bearer ${await sessionToken()}` } });
+      expect(fetcher).toHaveBeenCalledTimes(1);
+      expect(response.statusCode).toBe(503);
+      expect(response.json().code).toBe('DEPENDENCY_UNAVAILABLE');
+      expect(response.json()).not.toHaveProperty('userId');
     });
 
-    let response = await app.inject({
-      method: 'GET',
-      url: '/api/v1/me',
-      headers: { authorization: `Bearer ${token}` }
+    it('provider answering active:false is an invalid credential: exactly 401, not 503', async () => {
+      enableIntrospection();
+      const fetcher = vi.fn().mockResolvedValue(Response.json({ active: false }));
+      vi.stubGlobal('fetch', fetcher);
+      const response = await app.inject({ method: 'GET', url: '/api/v1/me', headers: { authorization: `Bearer ${await sessionToken()}` } });
+      expect(fetcher).toHaveBeenCalledTimes(1);
+      expect(response.statusCode).toBe(401);
+      expect(response.json().code).toBe('AUTHENTICATION_REQUIRED');
     });
 
-    // Authentication dependency unavailable is 401
-    expect([401, 503]).toContain(response.statusCode);
-
-    // Test 500 status code response
-    fetcher = vi.fn().mockResolvedValue(new Response('', { status: 500 }));
-    vi.stubGlobal('fetch', fetcher);
-
-    response = await app.inject({
-      method: 'GET',
-      url: '/api/v1/me',
-      headers: { authorization: `Bearer ${token}` }
+    it('provider answering active:true for the matching session is allowed (positive control)', async () => {
+      enableIntrospection();
+      const fetcher = vi.fn().mockResolvedValue(Response.json({ active: true, sub: '70000000-0000-0000-0000-000000000001', sid: 'session1' }));
+      vi.stubGlobal('fetch', fetcher);
+      const response = await app.inject({ method: 'GET', url: '/api/v1/me', headers: { authorization: `Bearer ${await sessionToken()}` } });
+      expect(fetcher).toHaveBeenCalledTimes(1);
+      expect(response.statusCode).toBe(200);
+      expect(response.json().userId).toBe(SEED_IDS.USER_ALICE);
     });
-
-    expect([401, 503]).toContain(response.statusCode);
-    
-    vi.unstubAllGlobals();
-    vi.unstubAllEnvs();
   });
 });
 
@@ -332,6 +343,48 @@ describe('HTTP adversarial resource/submission validation',()=>{
     }
     const privateProfile=await app.inject({url:path,headers:reader});
     expect(privateProfile.statusCode).toBe(200);expect(privateProfile.json().profile).not.toHaveProperty('bio');
+  });
+  it('suspension (membership AND organization) permits only own withdrawal; grants and foreign tenants denied; history and audit preserved',async()=>{
+    const {getDb}=await import('../../src/db/connection.js');
+    const db=getDb();
+    const caller=await headers('70000000-0000-0000-0000-000000000003'); // Charlie: Acme learner, no Globex membership
+    const count=async()=>Number((await db.selectFrom('consents').select(eb=>eb.fn.countAll<string>().as('n'))
+      .where('user_id','=',SEED_IDS.USER_CHARLIE).where('organization_id','=',SEED_IDS.ORG_ACME).executeTakeFirstOrThrow()).n);
+    const post=(granted:boolean,extra:Record<string,string>={})=>app.inject({method:'POST',url:'/api/v1/consents',headers:{...caller,...extra},payload:{purpose:'analytics',granted}});
+    const before=await count();
+    try{
+      // Organization-level suspension.
+      await db.updateTable('organizations').set({status:'suspended'}).where('id','=',SEED_IDS.ORG_ACME).execute();
+      const correlation=randomUUID();
+      const withdraw=await post(false,{'x-correlation-id':correlation});
+      expect(withdraw.statusCode).toBe(200);
+      const audit=await db.selectFrom('audit_events').selectAll().where('correlation_id','=',correlation).where('action','=','consent.withdraw').executeTakeFirstOrThrow();
+      expect(audit.actor_id).toBe(SEED_IDS.USER_CHARLIE);expect(audit.organization_id).toBe(SEED_IDS.ORG_ACME);
+      const grant=await post(true);
+      expect(grant.statusCode).toBe(403);
+      // Ordinary tenant routes stay closed under suspension.
+      expect((await app.inject({url:'/api/v1/resources',headers:caller})).statusCode).toBe(403);
+      await db.updateTable('organizations').set({status:'active'}).where('id','=',SEED_IDS.ORG_ACME).execute();
+
+      // Membership-level suspension.
+      await db.updateTable('memberships').set({status:'suspended'}).where('id','=',SEED_IDS.MEM_CHARLIE_ACME).execute();
+      expect((await post(false)).statusCode).toBe(200);
+      expect((await post(true)).statusCode).toBe(403);
+
+      // Foreign tenant: no membership row in Globex, so even withdrawal is denied.
+      const foreign=await app.inject({method:'POST',url:'/api/v1/consents',headers:{...caller,'x-organization-id':SEED_IDS.ORG_GLOBEX},payload:{purpose:'analytics',granted:false}});
+      expect(foreign.statusCode).toBe(403);expect(foreign.json().code).toBe('TENANT_ACCESS_DENIED');
+      // Unknown organization is denied the same way.
+      const unknown=await app.inject({method:'POST',url:'/api/v1/consents',headers:{...caller,'x-organization-id':randomUUID()},payload:{purpose:'analytics',granted:false}});
+      expect(unknown.statusCode).toBe(403);
+      expect(await db.selectFrom('consents').select('id').where('user_id','=',SEED_IDS.USER_CHARLIE).where('organization_id','=',SEED_IDS.ORG_GLOBEX).execute()).toHaveLength(0);
+
+      // Exactly the two withdrawals were appended; denied grants wrote nothing.
+      expect(await count()).toBe(before+2);
+    }finally{
+      await db.updateTable('organizations').set({status:'active'}).where('id','=',SEED_IDS.ORG_ACME).execute();
+      await db.updateTable('memberships').set({status:'active'}).where('id','=',SEED_IDS.MEM_CHARLIE_ACME).execute();
+    }
   });
   it('learner cannot select draft resources',async()=>{
     const result=await app.inject({url:'/api/v1/resources?status=draft',headers:await headers('70000000-0000-0000-0000-000000000003')});

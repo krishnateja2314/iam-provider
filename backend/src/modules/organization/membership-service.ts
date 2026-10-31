@@ -81,6 +81,46 @@ export async function validateMembership(
 }
 
 /**
+ * Ownership check WITHOUT the active-status requirement.
+ * Used only where a suspended member must still be able to act on their own data
+ * (consent withdrawal). Still rejects unknown organizations and non-members, so it
+ * never admits a foreign tenant. Roles are loaded only for an active member in an
+ * active organization; otherwise the caller holds no tenant roles.
+ */
+export async function findOwnMembership(
+  userId: string,
+  organizationId: string
+): Promise<MembershipInfo> {
+  const db = getDb();
+  const row = await db
+    .selectFrom('memberships')
+    .innerJoin('organizations', 'organizations.id', 'memberships.organization_id')
+    .select(['memberships.id as membershipId', 'memberships.status as membershipStatus',
+      'organizations.slug', 'organizations.name', 'organizations.status as organizationStatus'])
+    .where('memberships.user_id', '=', userId)
+    .where('memberships.organization_id', '=', organizationId)
+    .executeTakeFirst();
+  if (!row) {
+    throw new TenantError('User is not a member of this organization');
+  }
+  const active = row.membershipStatus === 'active' && row.organizationStatus === 'active';
+  const roles = active
+    ? (await db.selectFrom('membership_roles').innerJoin('roles', 'roles.id', 'membership_roles.role_id')
+        .select('roles.name').where('membership_roles.membership_id', '=', row.membershipId).execute()).map(r => r.name)
+    : [];
+  return {
+    membershipId: row.membershipId,
+    userId,
+    organizationId,
+    organizationSlug: row.slug,
+    organizationName: row.name,
+    organizationStatus: row.organizationStatus,
+    membershipStatus: row.membershipStatus,
+    roles,
+  };
+}
+
+/**
  * List all organizations a user has active memberships in.
  */
 export async function listUserOrganizations(userId: string): Promise<Array<{

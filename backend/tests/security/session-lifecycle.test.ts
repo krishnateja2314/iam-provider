@@ -4,6 +4,7 @@ import * as jose from 'jose';
 import { initJwks, validateAccessToken } from '../../src/modules/auth/token-validator.js';
 import { introspectAccessToken, listProviderSessions, revokeProviderSession, resetProviderSessions } from '../../src/modules/auth/session-service.js';
 import { createTestToken, getTestJwk } from '../helpers.js';
+import { DependencyError, AuthenticationError } from '../../src/common/types.js';
 import { getDb, closeDb } from '../../src/db/connection.js';
 
 const issuer = process.env.JWT_ISSUER || 'http://localhost:8180/realms/iam-platform';
@@ -29,12 +30,15 @@ describe('Uncached fail-closed provider session authentication', () => {
     expect(fetcher).toHaveBeenCalledTimes(2);
   });
 
-  it('rejects access and returns 503/401 when introspection fetch times out', async () => {
+  it('introspection timeout is a dependency failure (DependencyError -> 503), not an invalid credential', async () => {
     configure();
     const fetcher = vi.fn().mockRejectedValue(new Error('timeout'));
     vi.stubGlobal('fetch', fetcher);
     const token = await createTestToken({ claims: { sub: 'subject', sid: 'session' } });
-    await expect(validateAccessToken(token, options)).rejects.toThrow('Provider session verification unavailable');
+    const failure = validateAccessToken(token, options);
+    await expect(failure).rejects.toThrow('Provider session verification unavailable');
+    await expect(failure).rejects.toBeInstanceOf(DependencyError);
+    expect(fetcher).toHaveBeenCalledTimes(1);
   });
 
   it('rejects access when introspection fetch returns 500 error', async () => {
@@ -42,7 +46,15 @@ describe('Uncached fail-closed provider session authentication', () => {
     const fetcher = vi.fn().mockResolvedValue(new Response('', { status: 500 }));
     vi.stubGlobal('fetch', fetcher);
     const token = await createTestToken({ claims: { sub: 'subject', sid: 'session' } });
-    await expect(validateAccessToken(token, options)).rejects.toThrow('Provider session verification unavailable');
+    const failure = validateAccessToken(token, options);
+    await expect(failure).rejects.toThrow('Provider session verification unavailable');
+    await expect(failure).rejects.toBeInstanceOf(DependencyError);
+  });
+  it('inactive provider session is an invalid credential (AuthenticationError -> 401)', async () => {
+    configure();
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(Response.json({ active: false })));
+    const token = await createTestToken({ claims: { sub: 'subject', sid: 'session' } });
+    await expect(validateAccessToken(token, options)).rejects.toBeInstanceOf(AuthenticationError);
   });
   it.each([
     { active: 'true', sub: 'subject', sid: 'session' },
@@ -70,10 +82,13 @@ describe('Uncached fail-closed provider session authentication', () => {
     await expect(introspectAccessToken('token', { sub: 'subject', iss: issuer, sid: 'session' })).rejects.toThrow('credentials');
   });
   
-  it('enforces secure configuration for introspection in production', async () => {
-    vi.stubEnv('NODE_ENV', 'production');
+  it.each(['production', 'development'])('request-time defence: disabled introspection is refused when NODE_ENV=%s', async mode => {
+    vi.stubEnv('NODE_ENV', mode);
     vi.stubEnv('KEYCLOAK_INTROSPECTION', 'false');
-    await expect(validateAccessToken('token', options)).rejects.toThrow('KEYCLOAK_INTROSPECTION=false is not allowed in production');
+    const token = await createTestToken({ claims: { sub: 'subject', sid: 'session' } });
+    const failure = validateAccessToken(token, options);
+    await expect(failure).rejects.toThrow('KEYCLOAK_INTROSPECTION=false is only allowed when NODE_ENV=test');
+    await expect(failure).rejects.toBeInstanceOf(DependencyError);
   });
   it('cannot revoke a session belonging to another user', async () => {
     configure();

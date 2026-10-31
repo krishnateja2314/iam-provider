@@ -2,10 +2,10 @@ import type { FastifyRequest, FastifyReply } from 'fastify';
 import { randomUUID } from 'node:crypto';
 import { extractBearerToken, validateAccessToken, buildAuthenticatedUser } from './modules/auth/token-validator.js';
 import { findOrCreateUser } from './modules/user/user-service.js';
-import { validateMembership } from './modules/organization/membership-service.js';
+import { validateMembership, findOwnMembership } from './modules/organization/membership-service.js';
 import { recordAuditEvent } from './modules/audit/audit-service.js';
 import type { AuthenticatedUser, TenantContext, RequestContext } from './common/types.js';
-import { AuthenticationError, TenantError } from './common/types.js';
+import { AuthenticationError, DependencyError, TenantError } from './common/types.js';
 
 declare module 'fastify' {
   interface FastifyRequest {
@@ -46,8 +46,10 @@ export async function authenticationHook(request: FastifyRequest, reply: Fastify
     user.platformAdmin = Array.isArray(realmRoles) && realmRoles.includes('platform-admin');
     request.auth = user;
   } catch(error) {
+    // Invalid credential -> 401. Provider/JWKS outage or unsafe config -> 503. Both deny.
     const authError = error instanceof AuthenticationError;
-    await auditRequest(request,'authentication',authError?'deny':'error',authError?error.message:'Authentication dependency unavailable');
+    const reason = authError ? error.message : error instanceof DependencyError ? error.message : 'Authentication dependency unavailable';
+    await auditRequest(request,'authentication',authError?'deny':'error',reason);
     reply.code(authError?401:503).send({error:authError?'Invalid API credential':'Authentication service unavailable',code:authError?'AUTHENTICATION_REQUIRED':'DEPENDENCY_UNAVAILABLE'});
   }
 }
@@ -66,6 +68,31 @@ export async function tenantContextHook(request: FastifyRequest, reply: FastifyR
   } catch(error) {
     const denied = error instanceof TenantError;
     await auditRequest(request,'tenant-access',denied?'deny':'error',denied?'Inactive or absent membership/organization':'Tenant storage unavailable');
+    reply.code(denied?403:503).send({error:denied?'Access denied':'Tenant service unavailable',code:denied?'TENANT_ACCESS_DENIED':'DEPENDENCY_UNAVAILABLE'});
+  }
+}
+
+/**
+ * Tenant hook for the caller's OWN data under suspension (consent withdrawal only).
+ * Same untrusted-selector validation as tenantContextHook and still requires a membership
+ * row in the selected organization, so foreign tenants are rejected (403). Unlike
+ * tenantContextHook it admits suspended memberships/organizations; the route must then
+ * permit only the withdrawal operation and send everything else through permit().
+ */
+export async function ownMembershipHook(request: FastifyRequest, reply: FastifyReply): Promise<void> {
+  if (!request.auth) { reply.code(401).send({error:'Authentication required'});return; }
+  const orgId = request.headers['x-organization-id'];
+  if (!isUuid(orgId)) {
+    await auditRequest(request,'tenant-access','deny','Missing or malformed tenant selector');
+    reply.code(400).send({error:'Valid X-Organization-ID required',code:'INVALID_TENANT_FORMAT'});return;
+  }
+  try {
+    const membership = await findOwnMembership(request.auth.userId,orgId);
+    request.tenant = {organizationId:orgId,organizationSlug:membership.organizationSlug,membershipId:membership.membershipId,roles:membership.roles,membershipStatus:membership.membershipStatus,organizationStatus:membership.organizationStatus};
+    request.ctx = {user:request.auth,tenant:request.tenant,correlationId:request.correlationId!,ipAddress:request.ip};
+  } catch(error) {
+    const denied = error instanceof TenantError;
+    await auditRequest(request,'tenant-access',denied?'deny':'error',denied?'No membership in selected organization':'Tenant storage unavailable');
     reply.code(denied?403:503).send({error:denied?'Access denied':'Tenant service unavailable',code:denied?'TENANT_ACCESS_DENIED':'DEPENDENCY_UNAVAILABLE'});
   }
 }
