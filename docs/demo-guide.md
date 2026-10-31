@@ -50,7 +50,7 @@ Run the default fixture/security suite once before the meeting:
 docker compose exec -T backend env KEYCLOAK_INTROSPECTION=false RUN_DATABASE_TESTS=1 npm test
 ```
 
-**Expected on the verified source:**153 passed,6 skipped,0 failed. The skipped cases
+**Expected on the verified source (`42d8a43`):** 188 passed, 9 skipped, 0 failed. The skipped cases
 are intentionally gated live-provider lifecycle cases, not failures and not passes.
 The complete gated run is explained in section10.
 
@@ -272,7 +272,7 @@ The production validator checks actual JOSE signatures. Cases include wrong key,
 issuer, audience, expired token, ID-token substitution and malformed claims. Real DB
 cases verify concurrent first-login mapping and no email-based merging.
 
-## 10. Complete159-Test Run Including Live Sessions
+## 10. Complete Test Run Including Live Sessions
 
 The password-grant client is deliberately disabled by default. Enable it only for
 the disposable-user lifecycle tests, not for the demonstrated application login.
@@ -292,7 +292,7 @@ try {
 }
 ```
 
-**Verified result:**159 passed,0 failed,0 skipped,7 suites. Check the actual current
+**Verified result (`42d8a43`, clean clone, 2026-10-31):** 197 passed, 0 failed, 0 skipped, 9 files. (2 Oct, `0d232ec`: 159.) Check the actual current
 output before making that claim in a new environment. If configuration fails, do
 not claim the live tests ran. If disabling fails, rerun the updater before leaving.
 

@@ -2,7 +2,8 @@
 
 Repository: https://github.com/krishnateja2314/iam-provider
 
-Verified prototype source baseline: `0d232ecbd567a3482d0ebbc213d39e908e064ee1`.
+Current verified code revision: `42d8a43` (clean clone, new volumes, 2026-10-31: 197 passed,
+0 failed, 0 skipped; mutation check 7/7 killed; browser proof 10/10). Earlier baseline: `0d232ec`.
 
 Academic modular-monolith prototype for two synthetic learning organizations.
 Authentication is delegated to Keycloak; tenant membership, resource ownership,
@@ -16,7 +17,7 @@ Casbin authorization, provisioning, consent and audit are application responsibi
 - [Requirements matrix](docs/traceability-matrix.md): implemented versus verified requirements.
 - [Evaluation Protocol](docs/evaluation-protocol.md): Frozen acceptance criteria and protocol.
 - [Mentor Responses](docs/mentor-responses.md): Responses to the 8 mentor review questions.
-- [Actual execution evidence](docs/verification-evidence.md): 159 passing tests, browser proof and session observations.
+- [Actual execution evidence](docs/verification-evidence.md): dated per revision, with raw logs in `docs/evidence/`.
 - [Threat model](docs/threat-model.md) and [domain model](docs/domain-model.md).
 - Architecture decisions are in `docs/adr/`.
 - Historical TeX/PDF submissions remain local and are not included in this publication; the current Markdown reports describe the runnable implementation.
@@ -56,11 +57,19 @@ development-only fixtures. Do not deploy these HTTP/local credentials publicly.
 ## Test
 
 ```powershell
-docker compose exec -T backend npm run typecheck
+docker compose exec -T backend npm run typecheck   # source and tests
 docker compose exec -T backend npm run build
 docker compose exec -T backend npm audit
 docker compose exec -T backend env KEYCLOAK_INTROSPECTION=false RUN_DATABASE_TESTS=1 npm test
+node scripts/verify-test-independence.mjs          # mutation check; needs the running stack
+node scripts/verify-client-config.mjs              # runtime host config; no Docker needed
 ```
+
+`npm test` without live flags is expected to give 188 passed, 9 skipped. The mutation check exits 0 only
+if every mutated security guard is caught by its named tests. It exits 2 (inconclusive) if the
+database is down, the baseline fails, or the container source differs from the checkout.
+`KEYCLOAK_INTROSPECTION=false` is accepted only with `NODE_ENV=test` (the test setup sets it).
+Any other environment refuses to start.
 
 The last command uses real PostgreSQL and signed local JOSE fixtures. It does not
 disable introspection in the running API process. Live provider lifecycle tests
@@ -102,14 +111,20 @@ equality never silently merges their application accounts.
 - Only RS256 access tokens with required issuer, audience, subject, expiration and
   `typ=Bearer` are accepted. ID tokens are not API credentials.
 - Every configured API authentication also performs uncached provider introspection.
-  Provider failures deny access; already-issued tokens are checked after logout/revocation.
+  Provider failures deny access with 503 `DEPENDENCY_UNAVAILABLE`. Invalid or inactive tokens get 401.
+  An unsafe security configuration (for example, introspection disabled outside tests) stops the
+  process before it listens.
 - `X-Organization-ID` is untrusted. Active membership and organization status are
   checked, and resource/submission queries always include organization ownership.
 - Explicit denies override matching allows across roles. Policy rows are reread for
   subsequent decisions; there is no cross-tenant authorization cache.
 - Sensitive local mutations and their audit event commit together. Remote provider
   revocations record request/completion separately because they cannot share a DB transaction.
-- Consent is purpose-specific and append-only. Withdrawal is allowed while suspended.
+- Consent is purpose-specific and append-only. Withdrawal of one's own consent is allowed while
+  the membership or organization is suspended. Grants and foreign tenants are denied.
+- A tenant may be provisioned with an email domain and a configured Keycloak broker alias.
+  `GET /api/v1/sso/discover` returns the alias for Keycloak's `kc_idp_hint`. Domains are not DNS-verified.
+- Browser-facing hosts come from `IAM_PUBLIC_HOST` (default `localhost`). See demo guide section 11a.
 - The prototype is not a production deployment: local HTTP, development credentials,
   bounded provider-admin integration and synthetic datasets require production hardening.
 

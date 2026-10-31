@@ -1,0 +1,36 @@
+Commit 42d8a43eb07a98f74b94ab6e712353bdaa643a7c
+Container source matches checkout.
+Baseline (no mutation)...
+  passed 188, failed 0, skipped 9
+M1 Tenant membership check in tenantContextHook: KILLED (3 failing tests)
+    x API Integration: Tenant-Scoped Resources accessing org where user has no membership returns 403
+    x HTTP adversarial resource/submission validation learner cannot select draft resources
+    x HTTP adversarial resource/submission validation instructor list contains assigned submissions only
+M2 JWT signature verification: KILLED (9 failing tests)
+    x T03/T04/T09: production access token validation with real JOSE signatures rejects an invalid signature with the same trusted kid
+    x T03/T04/T09: production access token validation with real JOSE signatures rejects expiration
+    x T03/T04/T09: production access token validation with real JOSE signatures requires exp
+    x T03/T04/T09: production access token validation with real JOSE signatures requires iss
+    x T03/T04/T09: production access token validation with real JOSE signatures rejects mismatched claims {"iss":"https://attacker.invalid/realms/iam-platform"}
+    x T03/T04/T09: production access token validation with real JOSE signatures rejects mismatched claims {"aud":"iam-web"}
+    x T03/T04/T09: production access token validation with real JOSE signatures rejects malformed claims {"exp":"9999999999"}
+    x T03/T04/T09: production access token validation with real JOSE signatures rejects malformed claims {"iss":123}
+    x T03/T04/T09: production access token validation with real JOSE signatures rejects a signed non-RS256 algorithm
+M3 Tenant filter on submission lookup in authorize(): KILLED (1 failing test)
+    x HTTP adversarial resource/submission validation selector/resource substitution: a REAL Globex submission cannot be read or graded through the Acme selector
+M4 Consent route admits suspended members for withdrawal: KILLED (2 failing tests)
+    x HTTP adversarial resource/submission validation consent grants bio only for its purpose and withdrawal remains possible during suspension
+    x HTTP adversarial resource/submission validation suspension (membership AND organization) permits only own withdrawal; grants and foreign tenants denied; history and audit preserved
+M5 Fatal security-config check before listen(): KILLED (1 failing test)
+    x server entry point (subprocess) production with KEYCLOAK_INTROSPECTION=false exits 1 before listening
+M6 Provider outage reported as dependency error (503), not bad credential: KILLED (5 failing tests)
+    x API Integration: Authentication provider dependency contract introspection network failure / timeout denies with exactly 503 DEPENDENCY_UNAVAILABLE
+    x API Integration: Authentication provider dependency contract introspection provider HTTP 500 denies with exactly 503 DEPENDENCY_UNAVAILABLE
+    x API Integration: Authentication provider dependency contract introspection provider HTTP 503 denies with exactly 503 DEPENDENCY_UNAVAILABLE
+    x Uncached fail-closed provider session authentication introspection timeout is a dependency failure (DependencyError -> 503), not an invalid credential
+    x Uncached fail-closed provider session authentication rejects access when introspection fetch returns 500 error
+M7 Casbin explicit-deny precedence: KILLED (2 failing tests)
+    x T05-T08: hard tenant and relationship boundaries explicit deny overrides an admin allow and policy changes take effect next decision
+    x T05-T08: hard tenant and relationship boundaries explicit deny on one role wins over an allow on another role
+
+Working tree unchanged. 7 killed, 0 survived, 0 inconclusive.

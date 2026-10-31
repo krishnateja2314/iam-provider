@@ -25,6 +25,8 @@ Thumbs.db
 # Logs
 logs/
 *.log
+# Published verification evidence (sanitised, no tokens or secrets)
+!docs/evidence/**/*.log
 npm-debug.log*
 
 # Test coverage

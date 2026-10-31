@@ -268,6 +268,13 @@ Students should be able to answer in their own words and locate the implementing
 
 This explanatory Markdown report and its companion domain/threat/ADR/traceability updates were prepared with AI assistance, using the repository source and supplied verification status. AI assistance is not independent validation. The implementation work in this shared session also includes AI-assisted engineering; this report does not assign unverified authorship percentages or claim that a student personally wrote every line.
 
+The W3-review repairs (commits `5e4367a`, `ece833d`, `42d8a43` and the following documentation
+commit, 2026-10-31) were implemented, run and documented with an AI coding agent (Claude Code)
+working in the team's checkout under the team's direction. The agent's results were checked by executing
+them: real PostgreSQL/Keycloak suites, a clean-clone run, browser proof, and a mutation check that
+fails if the new tests do not detect broken guards. Several earlier AI-generated mistakes were
+found this way and are listed in `mentor-responses.md` (Week 3, Q8).
+
 The submitting student remains responsible for reviewing the code, running/reproducing evidence, correcting inaccurate claims, meeting course disclosure requirements and explaining design decisions without relying on generated prose. Final tests and provider proof belong in the traceability evidence log. Unknown or unexecuted checks must stay marked as such.
 
 ## 13. Explicit Non-Goals and Remaining Risks

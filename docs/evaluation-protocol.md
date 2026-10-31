@@ -17,3 +17,17 @@ The evaluation protocol and core security baseline are formally **frozen** as of
 6. **Performance Optimization (Optional W8):** Any performance optimization (e.g., composite indexes) must be measured against a strict reproducible baseline. The baseline workload, hardware, and policy suite must remain frozen during the comparison. Introspection cannot be disabled to manufacture a performance gain.
 
 *Signed, Team P01-G33*
+
+---
+
+### Timeline Note (added 2026-10-31, criteria above unchanged)
+
+- The freeze was due **9 October 2026** (W2-FB004). This document is dated and was first
+  committed on **10 October 2026** (commit `f68add3`, 21:35 IST). No earlier mentor-approved
+  freeze exists. **The freeze was late, and the W2-FB004 timeliness criterion is not met.** This
+  note does not backdate the freeze or claim otherwise.
+- The acceptance criteria above have not been edited since 10 October. Later work tightened
+  the implementation so that it meets them as written. For example, criterion 3 ("cannot be
+  disabled in production, failing closed") was previously enforced only at request time.
+  Since `5e4367a` it is also a fatal startup check. The criterion did not change.
+- Evidence for the current revision is in `verification-evidence.md` (2026-10-31, `42d8a43`).

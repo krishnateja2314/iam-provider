@@ -1,0 +1,74 @@
+
+> iam-platform-backend@1.0.0 test
+> vitest run
+
+
+ RUN  v5.0.3 /app
+
+ ❯ tests/integration/api.test.ts (25 tests | 1 failed) 701ms
+   ✓ API Integration: Health (1)
+     ✓ health endpoint returns ok 19ms
+   ✓ API Integration: Authentication (4)
+     ✓ request without Authorization header returns 401 7ms
+     ✓ request with invalid token returns 401 3ms
+     ✓ request with valid token returns user info 43ms
+     ✓ rejects authentication with 503/401 and denies access when introspection fetch times out or fails (500) 10ms
+   ✓ API Integration: Tenant-Scoped Resources (7)
+     ✓ listing resources without X-Organization-ID returns 400 4ms
+     ✓ listing Acme resources returns only Acme data 24ms
+     ✓ Alice accessing Acme resource by ID succeeds 10ms
+     ✓ Cross-tenant attack: Globex resource ID with Acme org header returns 404 or 403 9ms
+     ✓ accessing org where user has no membership returns 403 7ms
+     ✓ member management denied for non-admin (Charlie) 11ms
+     ✓ audit events accessible to admin (Alice in Acme) 17ms
+   ❯ HTTP adversarial resource/submission validation (13)
+     ✓ malformed resource UUID rejected before DB lookup 3ms
+     × consent grants bio only for its purpose and withdrawal remains possible during suspension 109ms
+     ✓ learner cannot select draft resources 18ms
+     ✓ learner cannot read a draft by ID 32ms
+     ✓ instructor list contains assigned submissions only 28ms
+     ✓ instructor grade unrelated submission denied over HTTP 18ms
+     ✓ out of bounds grade rejected 6ms
+     ✓ assigned instructor grades actual submission and commits required audit 17ms
+     ✓ audit insertion failure rolls back a sensitive grade operation 40ms
+     ✓ role removal immediately denies access 28ms
+     ✓ suspension immediately denies tenant access across all routes 17ms
+     ✓ unseeded third tenant access is isolated and denies access 9ms
+     ✓ selector/resource substitution attack fails on mutation endpoints 10ms
+ ✓ tests/security/session-lifecycle.test.ts (19 tests | 6 skipped) 87ms
+ ✓ tests/security/provisioning-privacy.test.ts (9 tests) 365ms
+ ✓ tests/security/t10-audit.test.ts (6 tests) 52ms
+ ✓ tests/security/t03-t04-t09-token-validation.test.ts (41 tests) 300ms
+ ✓ tests/security/t05-t08-authorization.test.ts (59 tests) 202ms
+ ✓ tests/security/t01-t02-identity-membership.test.ts (8 tests) 33ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/integration/api.test.ts > HTTP adversarial resource/submission validation > consent grants bio only for its purpose and withdrawal remains possible during suspension
+AssertionError: expected 403 to be 200 // Object.is equality
+
+- Expected
++ Received
+
+- 200
++ 403
+
+ ❯ tests/integration/api.test.ts:328:35
+    326|       await db.updateTable('memberships').set({status:'suspended'}).wh…
+    327|       const withdraw=await app.inject({method:'POST',url:'/api/v1/cons…
+    328|       expect(withdraw.statusCode).toBe(200);
+       |                                   ^
+    329|     }finally{
+    330|       await db.updateTable('memberships').set({status:'active'}).where…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed | 6 passed (7)
+      Tests  1 failed | 160 passed | 6 skipped (167)
+   Start at  08:54:03
+   Duration  4.36s (tests 50%, import 38%, transform 8%, setup 2%, worker 2%)
+
+    Isolate  7 workers spawned · ~112ms startup each (spawn + environment, per file)
+             at least ~672ms faster with isolate: false — reuses workers across files instead of one per file
+

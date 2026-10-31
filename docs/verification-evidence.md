@@ -1,4 +1,93 @@
-# Execution Evidence - 2026-10-02
+# Execution Evidence
+
+This file is a dated log. Each section states the exact source revision it applies to.
+A result from one revision is not evidence for another.
+
+## 2026-10-31: Current Revision `42d8a43`
+
+Code revision verified: **`42d8a43eb07a98f74b94ab6e712353bdaa643a7c`** (all code changes for
+the W3 review). The commit after it changes documentation only. Raw, ANSI-stripped logs are in
+[`docs/evidence/2026-10-31/`](evidence/2026-10-31/). No tokens, passwords, cookies or traces are in them.
+
+Environment: Windows 11 host, Docker Desktop 29.4.3 (Linux containers), Node 24.21.0-alpine in
+the backend image, host Node 24.20.0, Keycloak 26.8.0, PostgreSQL 16.15-alpine, Vitest 5.0.3,
+Microsoft Edge through Playwright (`IAM_BROWSER_CHANNEL=msedge`).
+
+### Baseline before any change (`953a0aa`, repository HEAD when this work started)
+
+`docker compose exec -T backend env KEYCLOAK_INTROSPECTION=false RUN_DATABASE_TESTS=1 npm test`
+at 2026-10-31T08:54:02Z, real PostgreSQL: **160 passed, 1 failed, 6 skipped**. The failure is
+`consent grants bio only for its purpose and withdrawal remains possible during suspension`,
+which got `expected 403 to be 200`. This confirms the mentor's P1 finding on a real database. The 2 Oct
+"159 passed" result was from an earlier revision and did not apply to `953a0aa`.
+Log: `baseline-953a0aa.log`.
+
+### Clean clone, new volumes, `42d8a43`
+
+`git clone` of the repository into an empty directory (no `.env`, no `node_modules`), then
+`docker compose -p iam-w4clean up -d --build --wait` with **newly created volumes**. Realm
+import, migrations 1-3 and seed ran from scratch. All five services were healthy at 2026-10-31T09:18:14Z.
+The image build ran `npm ci` and `npm run build`. The original project's stack was stopped,
+not removed, during this run, and its volumes were not touched. The isolated stack and its own
+volumes were removed afterwards.
+
+| Check (clean stack) | Command | Result |
+|---|---|---|
+| Typecheck (source **and tests**) | `docker compose -p iam-w4clean exec -T backend npm run typecheck` | PASS (exit 0) |
+| Build | `... exec -T backend npm run build` | PASS (exit 0) |
+| Dependency audit | `... exec -T backend npm audit` | **4 advisories (1 low, 3 moderate)**. See below |
+| Host install for browser proof | `npm --prefix backend ci` | PASS (exit 0) |
+| Complete suite incl. live provider | `IAM_ALLOW_PASSWORD_GRANT_TESTS=true node scripts/configure-keycloak.mjs --enable-test-client`, then `... exec -T backend env KEYCLOAK_INTROSPECTION=false RUN_DATABASE_TESTS=1 RUN_KEYCLOAK_TESTS=1 npm test`, then `node scripts/configure-keycloak.mjs` | **197 passed, 0 failed, 0 skipped**, 9 files, started 2026-10-31T09:18:36Z |
+| Mutation independence | `COMPOSE_PROJECT_NAME=iam-w4clean node scripts/verify-test-independence.mjs` | baseline 188 pass / 0 fail / 9 skip; **7 of 7 mutations killed**, 0 survived, 0 inconclusive; working tree unchanged |
+| Real browser PKCE/broker proof | `IAM_BROWSER_CHANNEL=msedge node scripts/verify-pkce.mjs` | **10 of 10 PASS** |
+
+Per-file counts of the complete suite: api 31, session-lifecycle 21 (6 live), provisioning-privacy 9,
+tenant-sso 10 (3 live), t10-audit 6, token-validation 41, startup-config 12, authorization 59,
+identity-membership 8. Logs: `clean-full.log`, `clean-checks.log`, `clean-mutation.log`, `clean-pkce.log`.
+
+**npm audit, honestly reported.** On 2 Oct the audit reported 0. On 31 Oct the same pinned
+dependencies have new advisories: `fast-uri` (transitive, fix available via lockfile),
+`fastify` 5.12.5 header-validation bypass GHSA-389g-gv7q-r4x8 (fixed in 5.12.7), and `minimatch`
+via `casbin`. They are not fixed in this revision, because upgrading would invalidate the evidence
+above. They are the first W5 action.
+
+### Live provider observations (clean stack)
+
+| Operation | First existing-token request | Operation start to denial |
+|---|---|---|
+| Provider logout | 401 | 62 ms |
+| Own-session API revocation | 401 | 52 ms |
+| Admin logout-all | 401 | 31 ms and 158 ms (two cases) |
+
+Max 158 ms over 4 samples, under the test's 5 s bound. This is a local observation, not an SLA.
+Password reset: `{"oldCredentialsAccepted":false,"newCredentialsAccepted":true,"previouslyIssuedAccessTokenStatus":200}`.
+Reset alone still does not revoke sessions, and incident response must call logout-all.
+Refresh replay: `{"reusedRefreshStatus":400,"successorRefreshStatus":400,"successorIssuedAccessTokenStatus":401}`.
+
+### What each W3 finding now has as evidence
+
+| W3 finding | Test / evidence | Observed |
+|---|---|---|
+| Suspended consent withdrawal (W3-FB005) | Existing `api.test.ts` consent case (200 expectation unchanged) and new case covering **organization** and **membership** suspension | Both pass on real PostgreSQL. Withdrawal 200 under each suspension; grant 403; foreign tenant (Globex) and unknown org 403 `TENANT_ACCESS_DENIED`; exactly two rows appended; `consent.withdraw` audit row with actor and org |
+| Fatal startup check | `startup-config.test.ts` spawns `src/server.ts` as a subprocess | Production + `KEYCLOAK_INTROSPECTION=false` exits **1**, prints `Startup refused: ...`, and the port refuses connections. A positive control with safe config answers `/health` 200. The same probe against the **production image** (`node dist/server.js`) also exited 1 with the port refused |
+| Outage status contract | `api.test.ts` "provider dependency contract" | Network failure, provider 500 and provider 503 give **exactly 503 `DEPENDENCY_UNAVAILABLE`**, with `fetch` called once each. `active:false` gives **exactly 401**. Matching active session gives 200. `sid` is now in `claims`, and tests are typechecked |
+| Mutation runner false success | `verify-test-independence.mjs` | 7 of 7 killed with named assertion failures. With PostgreSQL stopped the runner printed `INCONCLUSIVE baseline` and exited **2** (`mutation-db-down.log`, runner code identical to `ece833d`). The old script would have printed SUCCESS |
+| Foreign submission fixture | `api.test.ts` substitution test | A real Globex submission is created via the API and read by its owner (200). The same ID via the Acme selector gives 404 for the Acme **admin** and the Acme instructor on both read and grade. Not in the Acme list. Grade still `null`. Positive control: Globex admin grades it (200) |
+| Third tenant | `api.test.ts` third-tenant test | Provisioned over HTTP by platform admin (non-admin 403, retry idempotent). New admin creates courses and adds a learner. Learner sees only published, cannot read drafts or manage members. Platform admin without membership 403. Cross-tenant 404 both directions |
+| M5 domain/SSO association | `tenant-sso.test.ts` (7 DB and 3 live cases) | Association persisted and audited in the provisioning transaction. Changed SSO payload under the same key gives conflict. A domain owned by another tenant rolls back the whole tenant. Unknown alias and malformed domain rejected before writes. Suspended tenant not discoverable. **Live:** the discovered hint for the new tenant makes Keycloak 303 into `/realms/iam-enterprise/.../auth` with `client_id=iam-enterprise-broker`. Controls: no hint serves the login page, and an unknown alias never reaches the enterprise realm |
+| Hard-coded hostnames | `verify-client-config.mjs`, and `verify-pkce.mjs` with `IAM_PUBLIC_HOST=127.0.0.1` | 9 of 9 config checks pass. **Full browser proof 10 of 10 PASS on the alternate origin `127.0.0.1`** (local and enterprise broker, web and mobile) with no source edits (`pkce-127.0.0.1.log`, code identical to `42d8a43`). A physical phone on the LAN was **not** tested |
+
+### Not done / not claimed
+
+- No physical-phone run, native app, DNS domain verification, SCIM or real corporate IdP.
+- AG01/AG02 agent identities and the performance experiment are still not implemented.
+- npm audit advisories above are open.
+
+---
+
+# Historical: Execution Evidence - 2026-10-02 (revision `0d232ec`)
+
+These results apply to the 2 Oct revision only. As the baseline above shows, they did not carry over to `953a0aa`.
 
 ## Environment and Scope
 

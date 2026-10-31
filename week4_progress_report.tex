@@ -1,0 +1,195 @@
+\documentclass{article}
+\usepackage[utf8]{inputenc}
+\usepackage{geometry}
+\usepackage{hyperref}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{tabularx}
+\geometry{a4paper, margin=1in}
+\newcolumntype{Y}{>{\raggedright\arraybackslash}X}
+
+\title{\textbf{Progress Report: A Secure Multi-Tenant Identity, Authorization and Enterprise Access Platform (Week 4)}}
+\author{Krishna Teja (CS23BTECH11028) \and Jaya Prakash (CS23BTECH11015) \\ Department of Computer Science and Engineering \\ Indian Institute of Technology Hyderabad}
+\date{31 October 2026}
+
+\begin{document}
+
+\maketitle
+
+\section*{1. Summary of This Week}
+This week we worked through the Week 3 review. Before changing anything we reran the existing code on a real database. The Week 3 head (\texttt{953a0aa}) gave \textbf{160 passed, 1 failed, 6 skipped}. The one failure was the suspended-consent withdrawal test, which confirmed the mentor's main P1 finding. It also showed that our earlier ``159 passed'' result (2 October, revision \texttt{0d232ec}) did not apply to the later revision.
+
+We then fixed every P1 item in the review and kept Keycloak, Casbin and the Fastify modular monolith unchanged. We verified the result from a \textbf{fresh git clone with new Docker volumes}:
+
+\begin{itemize}
+    \item \textbf{197 passed, 0 failed, 0 skipped} across 9 test files, including 9 cases against the live Keycloak provider.
+    \item The rewritten mutation check caught \textbf{7 of 7} deliberately broken security guards.
+    \item The real-browser PKCE and enterprise-broker proof passed \textbf{10 of 10} checks on the default host and again on an alternate host.
+\end{itemize}
+
+All code changes are in commits \texttt{5e4367a}, \texttt{ece833d} and \texttt{42d8a43}, and the verified code revision is \texttt{42d8a43}. Raw logs are in \texttt{docs/evidence/2026-10-31/}.
+
+\section*{2. Status of Previous Feedback}
+\begin{tabularx}{\textwidth}{@{}l l Y@{}}
+\toprule
+\textbf{Item} & \textbf{Status} & \textbf{Evidence} \\
+\midrule
+W3-FB005 consent withdrawal & Fixed (late) & The existing HTTP test passes with its 200 expectation unchanged. The fix is dated 31 Oct, after the proposed W5 due date of 19--23 Oct. A new test covers organization and membership suspension, grant denial, a foreign tenant and an unknown tenant. \\
+FB003 stale/false evidence & Addressed & Clean-clone run of the pinned SHA with all suites and live flags. The mutation runner was rewritten. The foreign-submission and third-tenant fixtures were rebuilt. \\
+FB004 freeze timeliness & \textbf{Not met} & The freeze was recorded on 10 Oct, after the 9 Oct deadline. We added a timeline note. The criteria were not edited and nothing was backdated. \\
+Startup check (P1) & Fixed & The config is validated before \texttt{listen()}. A subprocess test asserts exit 1 and that no port is bound. \\
+Outage status (P1) & Fixed & A provider outage now returns exactly 503 \texttt{DEPENDENCY\_UNAVAILABLE}, and an inactive token returns exactly 401. Tests are now typechecked. \\
+Adversarial fixtures (P1) & Fixed & The substitution test uses a real Globex submission. The third tenant is provisioned and used over HTTP. \\
+M5 domain/SSO (P1) & Implemented & Tenant-to-domain-to-broker association created inside the provisioning transaction, plus a live Keycloak broker routing test. \\
+Hard-coded hosts (P1) & Fixed & A single \texttt{IAM\_PUBLIC\_HOST} setting drives all browser-facing URLs. The browser proof passes on an alternate origin. \\
+Agents / performance (P2) & Deferred & Not started. Planned for W5 now that the core checks pass (Section 7). \\
+\bottomrule
+\end{tabularx}
+
+\section*{3. Changes Made}
+\subsection*{3.1 Consent Withdrawal Under Suspension (W3-FB005)}
+In Week 2 we put every tenant route behind the active-only \texttt{tenantContextHook}. That change also covered \texttt{POST /consents}, which then returned 403 before the privacy service's deliberate withdrawal exception could run.
+
+The fix adds a separate hook, \texttt{ownMembershipHook}, which is used only on this route. It validates the untrusted \texttt{X-Organization-ID} selector exactly as before and requires a membership row in that organization, so foreign and unknown tenants are still rejected with 403. It does admit suspended memberships and suspended organizations. Inside the route, only \texttt{granted:false} skips the policy check. A grant still requires an active membership, an active organization and a Casbin allow.
+
+\subsection*{3.2 Fatal Startup Configuration Check}
+A new module, \texttt{src/config.ts}, checks the security configuration before the server binds a port. Introspection may be disabled only when \texttt{NODE\_ENV=test}. A client secret is required whenever introspection is on, the issuer must be an absolute URL, and production requires an azp allowlist. Any violation prints \texttt{Startup refused: ...} (variable names only, never values) and exits with code 1. The request-time check remains as defence in depth.
+
+\subsection*{3.3 Exact Provider-Outage Contract}
+We added a \texttt{DependencyError} type. It covers provider network errors, provider HTTP errors, malformed introspection responses, a missing client secret and JWKS timeouts, and it maps to \textbf{503}. A credential that is invalid or inactive still raises \texttt{AuthenticationError} and maps to \textbf{401}. Previously an outage was reported as 401, and the test accepted either status. Tests now assert the exact status and that \texttt{fetch} was called. They also put \texttt{sid} under \texttt{claims}, which the old test did not. \texttt{npm run typecheck} now covers the test files, which is why that mistake had gone unnoticed.
+
+\subsection*{3.4 Per-Tenant Domain and SSO Association (M5)}
+Migration 003 adds \texttt{organization\_sso\_configs}. Each row links a tenant to a unique lowercase email domain and a Keycloak broker alias.
+
+\begin{itemize}
+    \item \texttt{POST /api/v1/organizations} accepts an optional \texttt{sso} object. The alias must be one of the brokers configured in the realm. The association and its audit event are written in the same transaction as the tenant, so a domain already owned by another tenant rolls the whole provisioning back.
+    \item \texttt{GET /api/v1/sso/discover?email=} returns the broker alias, which the client passes to Keycloak as the standard \texttt{kc\_idp\_hint} parameter.
+    \item \texttt{GET /api/v1/sso-config} is the tenant administrator's view of its own association.
+\end{itemize}
+
+The globally imported broker provides \emph{federation}, meaning how Keycloak talks to the upstream IdP. The new table provides the \emph{tenant association}, meaning which tenant's users are routed to which broker. Domains are administrator-asserted. DNS verification, SCIM and real corporate IdPs remain out of scope.
+
+\subsection*{3.5 Stronger Adversarial Tests}
+\begin{itemize}
+    \item \textbf{Foreign submission.} The old test used a course UUID as a submission ID, so it could never fail. The new test creates a real Globex submission through the API and proves the owner can read it. It then attacks the same ID through the Acme selector as both an Acme administrator and an Acme instructor; every attempt returns 404 and the grade is unchanged. As a positive control, an authorized Globex administrator grades the row successfully.
+    \item \textbf{Third tenant.} A platform administrator provisions the tenant over HTTP; a non-admin is refused and a retry is idempotent. The new administrator then creates courses and adds a learner, and that learner's allowed and denied actions are checked. The test also covers SSO discovery and cross-tenant denial in both directions.
+\end{itemize}
+
+\subsection*{3.6 Reliable Mutation Runner}
+The old \texttt{verify-test-independence.mjs} reported SUCCESS on any error, including a stopped database. The rewrite works as follows:
+
+\begin{enumerate}
+    \item It confirms that the container's source is byte-identical to the checkout.
+    \item It requires a clean baseline in which every expected test exists and passes.
+    \item It applies one mutation at a time in a disposable copy, and each mutation's anchor must match exactly once.
+    \item It counts a mutation as killed only when the named tests fail with assertion errors.
+    \item It reports infrastructure errors as \textbf{INCONCLUSIVE} and exits with code 2.
+\end{enumerate}
+
+The runner never edits the working tree.
+
+\subsection*{3.7 Runtime Host Configuration}
+The client server now generates \texttt{/config.js} (issuer and API base) and the CSP from the same runtime settings. \texttt{app.js} no longer contains any host literal. Compose derives the Keycloak hostname, the backend issuer and CORS, and the client configuration from \texttt{IAM\_PUBLIC\_HOST}; the default is \texttt{localhost}. The Keycloak updater adds the alternate redirect URIs, and the seed links the fixture subjects to the new issuer using explicit \texttt{(issuer, subject)} rows rather than email matching.
+
+\section*{4. Experimental Evidence (Revision \texttt{42d8a43}, Clean Clone)}
+\begin{table}[h!]
+\centering
+\begin{tabular}{lr}
+\toprule
+\textbf{Test file} & \textbf{Passed} \\
+\midrule
+\texttt{t01-t02-identity-membership.test.ts} & 8 \\
+\texttt{t03-t04-t09-token-validation.test.ts} & 41 \\
+\texttt{t05-t08-authorization.test.ts} & 59 \\
+\texttt{t10-audit.test.ts} & 6 \\
+\texttt{provisioning-privacy.test.ts} & 9 \\
+\texttt{tenant-sso.test.ts} (new; 3 live) & 10 \\
+\texttt{startup-config.test.ts} (new; subprocess) & 12 \\
+\texttt{api.test.ts} & 31 \\
+\texttt{session-lifecycle.test.ts} (6 live) & 21 \\
+\midrule
+\textbf{Total} & \textbf{197 (0 failed, 0 skipped)} \\
+\bottomrule
+\end{tabular}
+\caption{Complete suite with real PostgreSQL and live Keycloak, 2026-10-31T09:18:36Z, new volumes.}
+\end{table}
+
+\begin{table}[h!]
+\centering
+\begin{tabular}{llr}
+\toprule
+\textbf{ID} & \textbf{Guard broken on purpose} & \textbf{Result} \\
+\midrule
+M1 & Tenant membership check in \texttt{tenantContextHook} & Killed (3 tests) \\
+M2 & JWT signature verification & Killed (9) \\
+M3 & Tenant filter on submission lookup & Killed (1) \\
+M4 & Consent route admits suspended withdrawal & Killed (2) \\
+M5 & Startup configuration check & Killed (1) \\
+M6 & Outage reported as 503, not 401 & Killed (5) \\
+M7 & Casbin explicit-deny precedence & Killed (2) \\
+\midrule
+--- & PostgreSQL stopped (control) & INCONCLUSIVE, exit 2 \\
+\bottomrule
+\end{tabular}
+\caption{Mutation independence. Baseline: 188 passed, 0 failed, 9 skipped. The working tree was unchanged afterwards.}
+\end{table}
+
+Other results:
+\begin{itemize}
+    \item \textbf{Build and checks.} \texttt{npm ci}, the typecheck (source and tests) and the build all pass.
+    \item \textbf{Browser proof.} Playwright with Microsoft Edge passed 10 of 10 checks on the clean stack. The checks cover PKCE for web and mobile, the enterprise broker for web and mobile, the tenant selector, audit, foreign-session denial, refresh replay and session revocation. All 10 also passed with \texttt{IAM\_PUBLIC\_HOST=127.0.0.1}, with no source edits.
+    \item \textbf{Startup probe on the production image.} \texttt{node dist/server.js} with introspection disabled exits with code 1, and the port refuses connections.
+    \item \textbf{Revocation latency.} The first request with an existing token was denied (401) 62\,ms after provider logout, 52\,ms after own-session revocation, and 31 and 158\,ms after admin logout-all. The maximum was 158\,ms over 4 samples. This is a local observation, not a service-level guarantee.
+    \item \textbf{Live SSO routing.} For a newly provisioned tenant, the discovered hint makes Keycloak return a 303 redirect into \texttt{/realms/iam-enterprise}. Two controls behave as expected: without the hint, Keycloak serves the normal login page, and an unknown alias never reaches the enterprise realm.
+\end{itemize}
+
+\section*{5. Limitations and Open Items}
+\begin{itemize}
+    \item \textbf{Dependency advisories.} \texttt{npm audit} now reports 4 advisories (1 low, 3 moderate) in \texttt{fast-uri}, \texttt{fastify} 5.12.5 (fixed in 5.12.7) and \texttt{minimatch} via \texttt{casbin}. On 2 October the audit reported 0. We have not fixed them in this revision, because an upgrade would invalidate the evidence above. They are the first W5 task.
+    \item \textbf{Phone.} The setup is documented, but we have not recorded a run on a physical phone over the LAN. The alternate-origin run shows that configuration works without code changes, but it does not prove a phone run.
+    \item \textbf{Freeze.} The freeze was late, as described in Section 2. The formal timeliness criterion remains unmet.
+    \item \textbf{Deferred work.} Agent identities (AG01 and AG02), the performance experiment, DNS domain verification and SCIM are not implemented.
+\end{itemize}
+
+\section*{6. Answers to the Mentor's Questions}
+The full answers are in \texttt{docs/mentor-responses.md} (Week 3). In brief:
+\begin{enumerate}
+    \item \textbf{Consent route.} The guard caused a regression. The fix and its tests are described in Section 3.1.
+    \item \textbf{Startup.} \texttt{startup-config.test.ts} spawns the server, and it exits with code 1 without binding a port.
+    \item \textbf{Mutation runner.} The new runner reports a stopped database as INCONCLUSIVE with exit code 2. Seven mutations are killed in isolation.
+    \item \textbf{Foreign submission.} The test now uses a real Globex row and proves both owner access and cross-tenant rejection.
+    \item \textbf{Revision timing.} We report the git timestamps. The first W3 commit is \texttt{f68add3} (10 Oct, 21:35 IST), and the freeze is acknowledged as late.
+    \item \textbf{Tenant SSO.} The \texttt{organization\_sso\_configs} table and the discovery API associate a tenant with its broker. Federation itself stays global in Keycloak.
+    \item \textbf{Configurability.} Changing \texttt{IAM\_PUBLIC\_HOST} changes every browser-facing URL. The response also classifies each value as configuration, test fixture, policy constant or secret.
+    \item \textbf{Viva.} Each member will answer live. The response lists the AI-generated mistakes we found through validation.
+\end{enumerate}
+
+We also corrected two of our own Week 2 answers. One claimed a clean-clone run that had not happened. The other cited a test file that does not exist and described the outage status as ``503 or 401'', when it was actually 401.
+
+\section*{7. Plan for the Next Checkpoint}
+\textbf{Owners (proposed, to be confirmed by the team):}
+\begin{itemize}
+    \item Krishna Teja: dependency remediation and the W5 outcome below.
+    \item Jaya Prakash: an independent rerun of the evidence commands on a second machine, and a recorded physical-phone run on a trusted network.
+\end{itemize}
+
+\noindent\textbf{One executable W5 outcome: the AG01 application service principal (time-boxed).} We will add a dedicated Keycloak confidential client, \texttt{iam-agent-reporting}, with an explicit principal kind, a grant for exactly one tenant (Acme), the intended API audience, and a single action (\texttt{learning-resource:list}).
+\begin{itemize}
+    \item \textbf{Command:} \texttt{docker compose exec -T backend env RUN\_DATABASE\_TESTS=1 RUN\_KEYCLOAK\_TESTS=1 npx vitest run tests/security/service-principal.test.ts}
+    \item \textbf{Input:} a client-credentials token for that client.
+    \item \textbf{Expected result:}
+    \begin{itemize}
+        \item Acme resource list: 200.
+        \item Globex: 403.
+        \item An admin action in Acme: 403.
+        \item An expired token, or an already-issued token after the client is disabled: 401.
+        \item Audit rows record \texttt{actor\_type='service'} with the client as actor.
+    \end{itemize}
+\end{itemize}
+
+\noindent\textbf{Prerequisite.} Upgrade \texttt{fastify} to 5.12.7 and refresh the lockfile for \texttt{fast-uri}. Then rerun the complete clean-clone suite, the mutation check and the browser proof, and publish the new counts.
+
+\section*{8. Use of AI Tools}
+The repairs and documentation this week were implemented with an AI coding agent (Claude Code), working in our repository under our direction. We judged its work by running it on real infrastructure, not by trusting its output. That validation is what exposed several earlier AI-generated mistakes, which are listed in \texttt{docs/mentor-responses.md}. Both members remain responsible for explaining, testing and modifying the code.
+
+\end{document}

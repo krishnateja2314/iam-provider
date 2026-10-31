@@ -2,11 +2,13 @@
 
 ## Actual Evidence
 
-Final complete execution **2026-10-02T15:56:38Z**: **159 passed, 0 failed, 0 skipped,
-7 suites**. Stack: Node24.21.0, PostgreSQL16.15, Keycloak26.8.0, Vitest5.0.3.
-Typecheck/build passed; npm audit reported zero vulnerabilities.
-[Execution evidence](verification-evidence.md) records commands, measured outcomes,
-first-start proof and the failed intermediate checks that were corrected.
+Current complete execution, revision **`42d8a43`**, from a **clean clone with new volumes**,
+**2026-10-31T09:18:36Z**: **197 passed, 0 failed, 0 skipped, 9 files** (including 9 live-provider
+cases). Stack: Node24.21.0, PostgreSQL16.15, Keycloak26.8.0, Vitest5.0.3. Typecheck (source and
+tests) and build passed. Mutation check: 7 of 7 killed. Browser proof: 10 of 10 PASS. npm audit
+reported **4 advisories (1 low, 3 moderate)**. These are open, see the evidence file.
+[Execution evidence](verification-evidence.md) has the commands, raw logs, the pre-fix
+baseline (`953a0aa`: 160 pass, 1 fail, 6 skip) and the historical 2 Oct record (159 pass on `0d232ec`).
 
 ```powershell
 # Enable the synthetic test-only client first, as in the demo guide.
@@ -16,7 +18,7 @@ docker compose exec -T backend env KEYCLOAK_INTROSPECTION=false RUN_DATABASE_TES
 Fixture tests use the production JOSE validator with signed test tokens and real
 PostgreSQL. Live tests explicitly enable introspection and call the running API
 with real Keycloak tokens. The exec environment does not change the server process.
-Without the live flags the normal result is **153 passed, 6 skipped**; skipped does
+Without the live flags the normal result is **188 passed, 9 skipped**; skipped does
 not mean passed. Paths below are relative to `backend/`, unless otherwise specified.
 
 ## T01-T13
@@ -34,7 +36,7 @@ not mean passed. Paths below are relative to `backend/`, unless otherwise specif
 | T09 / M3 | Expired access token denied; distinguish refresh session lifetime | Production-validator temporal cases; live refresh-session expiry case | VERIFIED: expired JWT rejected; test-client session expiration denies refresh and existing access via introspection. Normal demo access lifetime300s differs from short test session. |
 | T10 / M6/M7 | Queryable allow/deny audit; no secrets; auth/audit outage fails closed | Audit suite; API correlation-specific real DB audit trigger failure; unavailable DB authorization case; provisioning rollback cases | VERIFIED: required fields/filtering, real unavailable authorization storage denial, grade/bootstrap/member/consent audit failure rollback. Remote provider mutations use request/completion audit, not a fictitious distributed transaction. |
 | T11 / M2/M3/M7 | Second enterprise auth path; web/mobile; refresh replay/logout/reset/device/session revocation; malformed claims | Live lifecycle16 cases including6 provider cases; browser local/broker paths; claim suite | VERIFIED: both clients through enterprise broker; logout/revoke/logout-all existing token401; refresh reuse and successor400/access401. Password reset changes credentials but old access remains200 until explicit logout. Device reference is provider session, not attestation. |
-| T12 / M5/M6 | Provisioning retries/conflicts/rollback, admin bootstrap, quotas, suspension/reactivation, purpose consent and permitted fields | 9 grouped real DB provisioning/privacy cases; HTTP consent/profile case | VERIFIED: concurrent same-key retries one org; different payload conflict; quota locks; suspension/reactivation; append-only purpose consent; analytics cannot enable bio; suspended withdrawal200; bio omitted after withdrawal; unknown identity fields excluded. |
+| T12 / M5/M6 | Provisioning retries/conflicts/rollback, admin bootstrap, quotas, suspension/reactivation, purpose consent and permitted fields | 9 grouped real DB provisioning/privacy cases; HTTP consent/profile case | VERIFIED: concurrent same-key retries one org; different payload conflict; quota locks; suspension/reactivation; append-only purpose consent; analytics cannot enable bio; suspended withdrawal200; bio omitted after withdrawal; unknown identity fields excluded. **Regression note:** at `953a0aa` the HTTP route blocked suspended withdrawal (403). Fixed in `5e4367a` (`ownMembershipHook`). Organization- and membership-suspension cases, grant denial and foreign-tenant denial were added and pass at `42d8a43`. |
 | T13 / M4/M7 | At least40 representative policy cases; dynamic policy change and escalation resistance | `t05-t08-authorization.test.ts` | VERIFIED: 59 cases including48 role/resource/action combinations and11 boundaries; admin is not blanket permission; deny-overrides tested across roles. |
 
 ## Mechanism and Evidence Boundaries
@@ -44,7 +46,9 @@ not mean passed. Paths below are relative to `backend/`, unless otherwise specif
 | Two synthetic organizations | Seed Acme/Globex and HTTP/browser lists | No real identities/orgs used. |
 | Web/mobile | Separate public client IDs and redirect pages; both live paths verified | Mobile-style browser, not native Android/iOS. |
 | Two authentication mechanisms | Local provider password entered on OIDC page; federated enterprise OIDC broker | No custom authentication server; synthetic upstream is not a real corporate deployment. |
-| Domain/SSO setup | Imported enterprise realm and broker/client callback settings; non-destructive updater | No DNS verification, real company domain proof or SAML integration claimed. |
+| Domain/SSO setup | Imported enterprise realm/broker (federation in Keycloak). **Per-tenant association (M5):** migration 003 `organization_sso_configs` (unique domain to one tenant, broker alias), optional `sso` input persisted and audited in the provisioning transaction, `GET /api/v1/sso/discover` returns the alias for Keycloak's standard `kc_idp_hint`. `tests/security/tenant-sso.test.ts` includes a live check that a newly provisioned tenant routes into the enterprise realm | Domains are administrator-asserted: no DNS verification, real company domain proof, SAML or SCIM. Aliases must already exist in the realm (`KEYCLOAK_BROKER_ALIASES`). |
+| Startup/outage contract | `src/config.ts` validated before `listen()`; `DependencyError` maps to 503 | `startup-config.test.ts` (subprocess exit 1, no port); exact 503 for provider network/500/503 errors, exact 401 for an inactive token. Introspection may be disabled only with `NODE_ENV=test`. |
+| Host configurability | `IAM_PUBLIC_HOST` drives Keycloak hostname, issuer, CORS, client `/config.js` and CSP | Browser proof passed on `127.0.0.1` as an alternate origin. Physical phone on a LAN not recorded. |
 | Administrator bootstrap | Explicit Keycloak platform-admin fixture; atomic tenant admin creation service | Platform role never bypasses resource tenant membership; provider-admin infrastructure is bounded but sensitive. |
 | Policy changes | Fresh tenant policy rows each decision; insertion endpoint and dynamic tests | No general policy editor/language or graph platform. |
 | Session/refresh lifecycle | Provider-managed with uncached audience-client introspection | API fail closed when provider unavailable; only observed local timing is claimed. |
@@ -53,19 +57,21 @@ not mean passed. Paths below are relative to `backend/`, unless otherwise specif
 | Suspension/reactivation | Explicit platform status route and atomic service | Archived orgs cannot simply reactivate; no tenant data bypass. |
 | Purpose consent/fields | Append-only latest grant; service and HTTP grant/withdrawal checks | Public userId/displayName minimal; bio needs profile-sharing, not analytics consent. |
 | Malformed federation/token claims | Production signed-token shape validation | Explicit provider fixture linking is not email-based application merging. |
-| Reproducible startup | New `iam-firststart` volumes/import/migrate/seed/browser proof; isolated153pass6skip | Verified build context subsequently published at github.com/krishnateja2314/iam-provider, source baseline0d232ec; an independent clone-based run has not been performed. |
+| Reproducible startup | **Clean `git clone` of `42d8a43`**, `docker compose -p iam-w4clean up -d --build --wait`, new volumes, no `.env`. Full live suite 197/0/0, mutation 7/7, browser 10/10 | Run by the team on its own machine, not an independent third party. |
 
 ## Final Evidence Summary
 
 | Check | Actual result |
 |---|---|
-| Complete backend suite, main stack | 159 PASS /0 FAIL /0 SKIP,15:56:38Z |
-| Isolated first-start fixture suite | 153 PASS /0 FAIL /6 SKIP,15:49:54Z |
-| Real Edge browser PKCE/broker/tenant/session proof | PASS on main and newly initialized isolated stack |
-| Typecheck and Docker production build | PASS |
-| npm dependency audit | 0 findings |
-| Existing-token revocation local observations | First request401; final operation-to-denial durations62/65/38ms, max65ms over3samples |
-| Consent/profile HTTP | PASS for grant/bio projection/suspended withdrawal/omitted bio |
+| Complete suite incl. live, clean clone `42d8a43` | 197 PASS /0 FAIL /0 SKIP, 2026-10-31T09:18:36Z |
+| Pre-fix baseline `953a0aa` (DB, no live) | 160 PASS /1 FAIL /6 SKIP (suspended consent withdrawal) |
+| Mutation independence (7 guards) | 7 killed /0 survived /0 inconclusive; DB-down run INCONCLUSIVE exit 2 |
+| Real Edge browser PKCE/broker/tenant/session proof | 10/10 PASS on clean stack; 10/10 PASS on alternate origin `127.0.0.1` |
+| Typecheck (source + tests) and Docker production build | PASS |
+| npm dependency audit | **4 advisories (1 low, 3 moderate)**, open, W5 action |
+| Existing-token revocation local observations | First request401; 62/52/31/158ms, max158ms over4samples |
+| Consent/profile HTTP | PASS: grant/bio projection; withdrawal under org and membership suspension; grant and foreign tenant denied |
+| Historical (2 Oct, `0d232ec`) | 159 PASS /0 /0. Not evidence for later revisions |
 
 ## Deferred Extensions
 

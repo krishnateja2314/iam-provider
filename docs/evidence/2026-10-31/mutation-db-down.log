@@ -1,0 +1,4 @@
+Commit 5e4367aa26da0b4db0627cec71438fcc5e72d31b (backend/scripts have uncommitted changes)
+Container source matches checkout.
+Baseline (no mutation)...
+INCONCLUSIVE baseline: Vitest produced no JSON report (exit 143). 
