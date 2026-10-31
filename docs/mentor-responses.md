@@ -52,8 +52,8 @@ and `docs/evaluation-protocol.md` were first committed in `f68add3` on **10 Oct 
 The freeze document is dated 10 Oct because it was written then. There is no earlier mentor
 approval. **The freeze was late, and the W2-FB004 timeliness criterion is not met.** We added a
 timeline note to the protocol and did not change its criteria. **What was submitted for W3:** the PDF `dat_week_3_report.pdf` (128 KB), shared
-through Google Drive. Drive shows it last modified on **11 Oct 2026** (Drive shows the date only,
-no time). The local copy is the same size (130,790 bytes) and was generated on **11 Oct 11:30 IST**,
+through Google Drive and uploaded on **11 Oct 2026 at 11:32 IST** (Drive file details).
+The local copy is the same size (130,790 bytes) and was generated on **11 Oct 11:30 IST**,
 four minutes after commit **`eb50d8b`** (11 Oct 11:26 IST). That commit is therefore the code revision
 the W3 report describes. The original PDF is kept unchanged locally and on Drive. The W3 report was
 therefore also delivered after the 9 Oct freeze deadline.
