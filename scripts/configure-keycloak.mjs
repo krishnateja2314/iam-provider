@@ -8,6 +8,29 @@ const root = fileURLToPath(new URL('../', import.meta.url));
 const enableTests = process.argv.includes('--enable-test-client');
 if (enableTests && process.env.IAM_ALLOW_PASSWORD_GRANT_TESTS !== 'true') throw new Error('Explicit IAM_ALLOW_PASSWORD_GRANT_TESTS=true required');
 
+// Alternate public hostname (e.g. a LAN IP so a phone can reach the lab). The realm imports stay
+// localhost-only; this adds the same URLs under the public host and keeps the originals.
+const publicHost = process.env.IAM_PUBLIC_HOST?.trim();
+if (publicHost && !/^[a-zA-Z0-9.-]+$/.test(publicHost)) throw new Error('IAM_PUBLIC_HOST must be a hostname or IP address');
+const LOCAL = /http:\/\/localhost:(8180|5173)/g;
+const toPublic = value => value.replace(LOCAL, (_m, port) => `http://${publicHost}:${port}`);
+function addPublicHost(realm) {
+  if (!publicHost || publicHost === 'localhost') return;
+  const widen = list => [...new Set([...(list || []), ...(list || []).map(toPublic)])];
+  for (const client of realm.clients || []) {
+    client.redirectUris = widen(client.redirectUris);
+    client.webOrigins = widen(client.webOrigins);
+    const logout = client.attributes?.['post.logout.redirect.uris'];
+    if (logout) client.attributes['post.logout.redirect.uris'] = widen(logout.split('##')).join('##');
+  }
+  // Browser-facing broker URLs and the upstream issuer follow KC_HOSTNAME, i.e. the public host.
+  for (const provider of realm.identityProviders || []) {
+    for (const key of ['authorizationUrl', 'issuer', 'logoutUrl']) {
+      if (provider.config?.[key]) provider.config[key] = toPublic(provider.config[key]);
+    }
+  }
+}
+
 async function main() {
   const login = await fetch(`${base}/realms/master/protocol/openid-connect/token`, {
     method: 'POST', body: new URLSearchParams({ grant_type: 'password', client_id: 'admin-cli',
@@ -28,6 +51,7 @@ async function main() {
   }
   for (const filename of ['iam-enterprise-realm.json', 'iam-platform-realm.json']) {
     const realm = JSON.parse(await readFile(resolve(root, 'infrastructure/keycloak', filename), 'utf8'));
+    addPublicHost(realm);
     const prefix = `/realms/${realm.realm}`;
     let existing = await api(prefix, 'GET', undefined, true);
     if (!existing) {

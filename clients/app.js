@@ -1,4 +1,6 @@
-const issuer = 'http://localhost:8180/realms/iam-platform';
+// Issuer/API come from /config.js (clients/server.mjs), generated from runtime environment.
+if (!window.IAM_CONFIG) throw new Error('Client configuration (/config.js) did not load');
+const { issuer, apiBase } = window.IAM_CONFIG;
 const clientId = document.body.dataset.client;
 const redirectUri = `${location.origin}${location.pathname}`;
 const transactionKey = `pkce:${clientId}`;
@@ -165,7 +167,7 @@ async function login(enterprise) {
 }
 
 async function showProfile() {
-  const response = await fetch('http://localhost:3100/api/v1/me', { headers: { Authorization: `Bearer ${tokens.access_token}` } });
+  const response = await fetch(`${apiBase}/api/v1/me`, { headers: { Authorization: `Bearer ${tokens.access_token}` } });
   if (!response.ok) throw new Error(`API rejected session (${response.status})`);
   const data = await response.json();
   profile.textContent = JSON.stringify(data, null, 2);
@@ -233,7 +235,7 @@ for (const [id, path, tenantRequired] of [
   ['resources', 'resources', true], ['members', 'members', true], ['submissions', 'submissions', true],
   ['audit', 'audit-events?limit=20', true], ['sessions', 'sessions', false],
 ]) document.getElementById(id).onclick = () => run(async () => {
-  const response = await fetch(`http://localhost:3100/api/v1/${path}`, { headers: {
+  const response = await fetch(`${apiBase}/api/v1/${path}`, { headers: {
     Authorization: `Bearer ${tokens.access_token}`, ...(tenantRequired ? { 'X-Organization-ID': organization.value } : {}),
   } });
   const data = await response.json();

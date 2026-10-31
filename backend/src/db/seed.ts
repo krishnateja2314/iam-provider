@@ -154,6 +154,15 @@ INSERT INTO profiles (user_id, organization_id, display_name, bio) VALUES
   ('${IDS.USER_DIANA}', '${IDS.ORG_GLOBEX}', 'Dr. Diana', 'Dean and DS professor');
 `;
 
+const DEFAULT_FIXTURE_ISSUER = 'http://localhost:8180/realms/iam-platform';
+const FIXTURE_SUBJECTS = [
+  [IDS.USER_ALICE, '70000000-0000-0000-0000-000000000001', 'alice@example.com'],
+  [IDS.USER_BOB, '70000000-0000-0000-0000-000000000002', 'bob@example.com'],
+  [IDS.USER_CHARLIE, '70000000-0000-0000-0000-000000000003', 'charlie@example.com'],
+  [IDS.USER_DIANA, '70000000-0000-0000-0000-000000000004', 'diana@example.com'],
+  [IDS.USER_EVE, '70000000-0000-0000-0000-000000000005', 'eve@example.com'],
+] as const;
+
 async function seed() {
   const client = new Client({
     connectionString: process.env.DATABASE_URL,
@@ -168,6 +177,18 @@ async function seed() {
     // consent withdrawals, and suspension survive ordinary container restarts.
     const existing = await client.query('SELECT id FROM organizations WHERE id = $1',[IDS.ORG_ACME]);
     if (!existing.rowCount) await client.query(SEED_SQL);
+    // The static fixtures are linked to the default local issuer. When the stack runs under another
+    // public hostname (IAM_PUBLIC_HOST), the provider issues tokens with a different `iss`, so link the
+    // same fixture subjects to the configured issuer as an additional external identity. This is an
+    // explicit, parameterized fixture link keyed by (issuer, subject), never an email-based merge.
+    const configuredIssuer = process.env.JWT_ISSUER;
+    if (configuredIssuer && configuredIssuer !== DEFAULT_FIXTURE_ISSUER) {
+      new URL(configuredIssuer);
+      for (const [userId, subject, email] of FIXTURE_SUBJECTS) {
+        await client.query(`INSERT INTO authentication_identities (user_id, issuer, subject, email, email_verified)
+          VALUES ($1, $2, $3, $4, true) ON CONFLICT (issuer, subject) DO NOTHING`, [userId, configuredIssuer, subject, email]);
+      }
+    }
     await client.query(`INSERT INTO learning_resources (id,organization_id,title,resource_type,status,created_by)
       VALUES ('50000000-0000-0000-0000-000000000005',$1,'Unpublished synthetic course','course','draft',$2)
       ON CONFLICT (id) DO NOTHING`,[IDS.ORG_ACME,IDS.USER_BOB]);

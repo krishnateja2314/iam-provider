@@ -1,4 +1,7 @@
 # Synthetic local development only. Databases are private to this stack.
+# Browser-facing URLs derive from IAM_PUBLIC_HOST (default localhost). For a phone on the
+# same LAN: IAM_PUBLIC_HOST=<host LAN IP> IAM_BIND_ADDRESS=0.0.0.0, then run
+# scripts/configure-keycloak.mjs with the same IAM_PUBLIC_HOST (see docs/demo-guide.md).
 services:
   postgres:
     image: postgres:16.15-alpine
@@ -36,13 +39,13 @@ services:
       KC_DB_URL: jdbc:postgresql://keycloak-db:5432/keycloak
       KC_DB_USERNAME: keycloak
       KC_DB_PASSWORD: ${KEYCLOAK_DB_PASSWORD:-keycloak_dev_password}
-      KC_HOSTNAME: http://localhost:8180
+      KC_HOSTNAME: http://${IAM_PUBLIC_HOST:-localhost}:8180
       KC_HTTP_ENABLED: "true"
       KC_HEALTH_ENABLED: "true"
       KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN:-admin}
       KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin_dev_password}
     ports:
-      - "127.0.0.1:8180:8080"
+      - "${IAM_BIND_ADDRESS:-127.0.0.1}:8180:8080"
     volumes:
       - ./infrastructure/keycloak:/opt/keycloak/data/import:ro
     depends_on:
@@ -65,7 +68,8 @@ services:
       BACKEND_HOST: 0.0.0.0
       LOG_LEVEL: ${LOG_LEVEL:-info}
       DATABASE_URL: postgresql://${POSTGRES_USER:-iam_user}:${POSTGRES_PASSWORD:-dev_password_change_me}@postgres:5432/${POSTGRES_DB:-iam_platform}
-      JWT_ISSUER: http://localhost:8180/realms/iam-platform
+      JWT_ISSUER: http://${IAM_PUBLIC_HOST:-localhost}:8180/realms/iam-platform
+      CORS_ORIGIN: http://localhost:5173,http://${IAM_PUBLIC_HOST:-localhost}:5173
       JWT_AUDIENCE: iam-backend
       JWKS_URL: http://keycloak:8080/realms/iam-platform/protocol/openid-connect/certs
       KEYCLOAK_INTERNAL_URL: http://keycloak:8080
@@ -78,7 +82,7 @@ services:
       KEYCLOAK_ADMIN_CLIENT_ID: iam-provider-admin
       KEYCLOAK_ADMIN_CLIENT_SECRET: ${KEYCLOAK_ADMIN_CLIENT_SECRET:-dev-provider-admin-secret}
     ports:
-      - "127.0.0.1:3100:3100"
+      - "${IAM_BIND_ADDRESS:-127.0.0.1}:3100:3100"
     depends_on:
       postgres:
         condition: service_healthy
@@ -95,10 +99,14 @@ services:
     image: node:24.21.0-alpine
     working_dir: /app
     command: ["node", "server.mjs"]
+    environment:
+      IAM_ISSUER: http://${IAM_PUBLIC_HOST:-localhost}:8180/realms/iam-platform
+      IAM_API_BASE: http://${IAM_PUBLIC_HOST:-localhost}:3100
+      CLIENT_PORT: "5173"
     volumes:
       - ./clients:/app:ro
     ports:
-      - "127.0.0.1:5173:5173"
+      - "${IAM_BIND_ADDRESS:-127.0.0.1}:5173:5173"
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:5173/web.html').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 5s

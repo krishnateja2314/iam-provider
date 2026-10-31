@@ -350,6 +350,28 @@ The script uses separate browser contexts, keeps tokens in memory, deletes only
 its created provider sessions/disposable test user, and writes no traces/HARs.
 Browser automation is separate from the159 Vitest count; do not double-count it.
 
+## 11a. Alternate Host (Phone or Another Machine)
+
+Browser-facing URLs are runtime configuration, not source. One variable drives them all:
+Keycloak `KC_HOSTNAME`, backend `JWT_ISSUER`/`CORS_ORIGIN`, the client `/config.js`
+(issuer/API) and the client CSP. Fixture users are linked to the configured issuer by the seed.
+
+```powershell
+node scripts/verify-client-config.mjs              # no Docker: config.js + CSP follow env
+$env:IAM_PUBLIC_HOST = "127.0.0.1"                 # different origin, still loopback-only
+docker compose up -d --wait
+node scripts/configure-keycloak.mjs                # adds the alternate redirect URIs/broker URLs
+$env:IAM_BROWSER_CHANNEL = "msedge"; node scripts/verify-pkce.mjs
+Remove-Item Env:IAM_PUBLIC_HOST; docker compose up -d --wait; node scripts/configure-keycloak.mjs
+```
+
+For a physical phone on the same Wi-Fi use the computer's LAN IP and also set
+`IAM_BIND_ADDRESS=0.0.0.0`. That exposes synthetic development credentials to the local
+network: do it only on a trusted network and revert afterwards. Changing the host changes the
+token issuer; identities are keyed by `(issuer, subject)`, so the seed adds an explicit
+fixture link for the new issuer rather than merging by email. The phone run itself has not
+been recorded as evidence; the `127.0.0.1` run has (see `docs/verification-evidence.md`).
+
 ## 12. Explain One Protected Request
 
 Use Bob requesting a submission as your example:

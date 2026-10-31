@@ -5,8 +5,13 @@ import { pathToFileURL } from 'node:url';
 const require = createRequire(new URL('../backend/package.json', import.meta.url));
 const { chromium } = (await import(pathToFileURL(require.resolve('playwright')).href)).default;
 const { createRemoteJWKSet, jwtVerify } = await import(pathToFileURL(require.resolve('jose')).href);
-const issuer = 'http://localhost:8180/realms/iam-platform';
-const apiBase = 'http://localhost:3100';
+// Same hostname contract as docker-compose.yml: IAM_PUBLIC_HOST (default localhost).
+const publicHost = process.env.IAM_PUBLIC_HOST || 'localhost';
+if (!/^[a-zA-Z0-9.-]+$/.test(publicHost)) throw new Error('IAM_PUBLIC_HOST must be a hostname or IP address');
+const issuer = `http://${publicHost}:8180/realms/iam-platform`;
+const apiBase = `http://${publicHost}:3100`;
+const clientOrigin = `http://${publicHost}:5173`;
+console.log(`Browser proof against issuer ${issuer}, API ${apiBase}, clients ${clientOrigin}`);
 const jwks = createRemoteJWKSet(new URL(`${issuer}/protocol/openid-connect/certs`));
 function check(condition, label) { if (!condition) throw new Error(label); }
 const channel = process.env.IAM_BROWSER_CHANNEL;
@@ -20,7 +25,7 @@ async function form(path, values) {
   return fetch(`${issuer}/protocol/openid-connect/${path}`, { method: 'POST', body: new URLSearchParams(values), signal: AbortSignal.timeout(15000), redirect: 'error' });
 }
 async function provider(path, method = 'GET', body) {
-  return fetch(`http://localhost:8180/admin/realms/iam-platform${path}`, { method, signal: AbortSignal.timeout(15000), redirect: 'error',
+  return fetch(`http://${publicHost}:8180/admin/realms/iam-platform${path}`, { method, signal: AbortSignal.timeout(15000), redirect: 'error',
     headers: { Authorization: `Bearer ${providerToken}`, 'Content-Type': 'application/json' },
     ...(body ? { body: JSON.stringify(body) } : {}),
   });
@@ -48,7 +53,7 @@ async function authenticate(pageName, username, password, enterprise = false, wr
   const tokenResponse = page.waitForResponse(response => response.url() === `${issuer}/protocol/openid-connect/token` && response.request().method() === 'POST', { timeout: 30000 });
   // Avoid an unhandled timeout if navigation itself fails.
   tokenResponse.catch(() => {});
-  await page.goto(`http://localhost:5173/${pageName}.html`);
+  await page.goto(`${clientOrigin}/${pageName}.html`);
   await page.locator(enterprise ? '#enterprise' : '#login').click();
   await page.locator('#username').fill(username);
   await page.locator('#password').fill(password);
