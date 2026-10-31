@@ -71,6 +71,8 @@ services:
       KEYCLOAK_INTERNAL_URL: http://keycloak:8080
       KEYCLOAK_INTROSPECTION: "true"
       KEYCLOAK_ALLOWED_AZP: iam-web,iam-mobile,iam-test
+      # Must match identityProviders[].alias in the platform realm import.
+      KEYCLOAK_BROKER_ALIASES: enterprise
       KEYCLOAK_CLIENT_ID: iam-backend
       KEYCLOAK_CLIENT_SECRET: ${KEYCLOAK_CLIENT_SECRET:-dev-client-secret-change-me}
       KEYCLOAK_ADMIN_CLIENT_ID: iam-provider-admin

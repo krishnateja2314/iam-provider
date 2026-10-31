@@ -6,7 +6,7 @@ import { authorize } from './modules/authorization/authorization-engine.js';
 import { recordAuditEvent, queryAuditEvents } from './modules/audit/audit-service.js';
 import { listUserOrganizations } from './modules/organization/membership-service.js';
 import { authenticationHook, tenantContextHook, ownMembershipHook, auditRequest, UUID_PATTERN, isUuid } from './middleware.js';
-import { provisionOrganization, setOrganizationStatus, createMember, ProvisioningError, lockOrganization } from './modules/provisioning/provisioning-service.js';
+import { provisionOrganization, setOrganizationStatus, createMember, ProvisioningError, lockOrganization, discoverSso, getTenantSso } from './modules/provisioning/provisioning-service.js';
 import { getSharedProfile, recordConsent } from './modules/user/privacy-service.js';
 import { listProviderSessions, revokeProviderSession, resetProviderSessions } from './modules/auth/session-service.js';
 
@@ -112,10 +112,22 @@ export function registerRoutes(app:FastifyInstance):void {
       return submission;
     });return {submission:result};
   });
-  app.post('/api/v1/organizations',{preHandler:[authenticationHook],schema:{body:{type:'object',additionalProperties:false,required:['name','slug','adminUserId'],properties:{name:{type:'string',minLength:1,maxLength:255},slug:{type:'string',pattern:'^[a-z0-9][a-z0-9-]{1,50}$'},adminUserId:uuid,maxMembers:{type:'integer',minimum:1,maximum:10000},maxResources:{type:'integer',minimum:1,maximum:10000}}}}},async(request,reply)=>{
+  app.post('/api/v1/organizations',{preHandler:[authenticationHook],schema:{body:{type:'object',additionalProperties:false,required:['name','slug','adminUserId'],properties:{name:{type:'string',minLength:1,maxLength:255},slug:{type:'string',pattern:'^[a-z0-9][a-z0-9-]{1,50}$'},adminUserId:uuid,maxMembers:{type:'integer',minimum:1,maximum:10000},maxResources:{type:'integer',minimum:1,maximum:10000},sso:{type:'object',additionalProperties:false,required:['emailDomain','identityProviderAlias'],properties:{emailDomain:{type:'string',minLength:3,maxLength:253},identityProviderAlias:{type:'string',minLength:1,maxLength:100,pattern:'^[a-zA-Z0-9_-]+$'}}}}}}},async(request,reply)=>{
     if(!request.auth!.platformAdmin){await auditRequest(request,'organization.provision','deny','Platform admin required');return reply.code(403).send({error:'Access denied'});}
     const key=request.headers['idempotency-key'];if(typeof key!=='string'||key.length<8||key.length>128){await auditRequest(request,'organization.provision','deny','Invalid idempotency key');return reply.code(400).send({error:'Idempotency-Key required (8-128 characters)'});}
-    return provisionOrganization({...request.body as {name:string;slug:string;adminUserId:string},actorUserId:request.auth!.userId,correlationId:request.correlationId!,idempotencyKey:key});
+    return provisionOrganization({...request.body as {name:string;slug:string;adminUserId:string;sso?:{emailDomain:string;identityProviderAlias:string}},actorUserId:request.auth!.userId,correlationId:request.correlationId!,idempotencyKey:key});
+  });
+  // Pre-login home-realm discovery. Public by design (the login page needs it before a token
+  // exists); returns only the broker alias, which the client passes to Keycloak as kc_idp_hint.
+  app.get('/api/v1/sso/discover',{schema:{querystring:{type:'object',additionalProperties:false,required:['email'],properties:{email:{type:'string',minLength:3,maxLength:320}}}}},async(request,reply)=>{
+    const found=await discoverSso((request.query as {email:string}).email);
+    if(!found)return reply.code(404).send({error:'No enterprise SSO configured for this domain',code:'SSO_NOT_CONFIGURED'});
+    return {...found,authorizationParameter:'kc_idp_hint'};
+  });
+  app.get('/api/v1/sso-config',{preHandler:tenantHooks},async(request,reply)=>{
+    if(!await permit(request,reply,'member','manage'))return;
+    await auditRequest(request,'organization.sso.read','allow','Tenant admin');
+    return {organizationId:request.tenant!.organizationId,sso:await getTenantSso(request.tenant!.organizationId)};
   });
   app.patch('/api/v1/platform/organizations/:organizationId/status',{preHandler:[authenticationHook],schema:{params:idParams('organizationId'),body:{type:'object',additionalProperties:false,required:['status'],properties:{status:{type:'string',enum:['active','suspended']}}}}},async(request,reply)=>{
     if(!request.auth!.platformAdmin){await auditRequest(request,'organization.status','deny','Platform admin required');return reply.code(403).send({error:'Access denied'});}

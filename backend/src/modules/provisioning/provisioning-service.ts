@@ -17,6 +17,25 @@ export interface ProvisionOrgRequest extends MutationContext {
   idempotencyKey: string;
   maxMembers?: number;
   maxResources?: number;
+  /** Optional tenant domain/SSO association, persisted in the same transaction. */
+  sso?: { emailDomain: string; identityProviderAlias: string };
+}
+
+const DOMAIN_PATTERN = /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/;
+
+/** Broker aliases configured in the Keycloak platform realm (identityProviders[].alias). */
+export function allowedBrokerAliases(env = process.env): string[] {
+  return (env.KEYCLOAK_BROKER_ALIASES ?? 'enterprise').split(',').map(value => value.trim()).filter(Boolean);
+}
+
+export function normalizeSso(sso: ProvisionOrgRequest['sso']): ProvisionOrgRequest['sso'] {
+  if (sso === undefined) return undefined;
+  const emailDomain = typeof sso.emailDomain === 'string' ? sso.emailDomain.trim().toLowerCase() : '';
+  if (!DOMAIN_PATTERN.test(emailDomain)) throw new ProvisioningError('invalid_input', 'Invalid SSO email domain');
+  if (!allowedBrokerAliases().includes(sso.identityProviderAlias)) {
+    throw new ProvisioningError('invalid_input', 'Unknown identity provider alias');
+  }
+  return { emailDomain, identityProviderAlias: sso.identityProviderAlias };
 }
 
 export async function auditMutation(trx: Transaction<Database>, context: MutationContext, organizationId: string,
@@ -58,8 +77,10 @@ export async function provisionOrganization(request: ProvisionOrgRequest): Promi
       !Number.isSafeInteger(maxMembers) || maxMembers < 1 || !Number.isSafeInteger(maxResources) || maxResources < 1) {
     throw new ProvisioningError('invalid_input', 'Invalid organization provisioning input');
   }
+  const sso = normalizeSso(request.sso);
+  // sso is only part of the hash when supplied, so ledger rows from before M5 still match.
   const hash = createHash('sha256').update(JSON.stringify({ name: request.name, slug: request.slug,
-    adminUserId: request.adminUserId, maxMembers, maxResources })).digest('hex');
+    adminUserId: request.adminUserId, maxMembers, maxResources, ...(sso ? { sso } : {}) })).digest('hex');
   return getDb().transaction().execute(async trx => {
     // A transaction lock serializes concurrent retries before either has a ledger row.
     await sql`select pg_advisory_xact_lock(hashtextextended(${JSON.stringify([request.actorUserId, request.idempotencyKey])}, 0))`.execute(trx);
@@ -81,9 +102,15 @@ export async function provisionOrganization(request: ProvisionOrgRequest): Promi
     await trx.insertInto('profiles').values({ user_id: request.adminUserId, organization_id: org.id,
       display_name: (await trx.selectFrom('users').select('display_name').where('id', '=', request.adminUserId).executeTakeFirstOrThrow()).display_name,
       bio: null }).execute();
+    if (sso) {
+      // Unique email_domain: a domain already claimed by another tenant aborts the whole provisioning.
+      await trx.insertInto('organization_sso_configs').values({ organization_id: org.id, email_domain: sso.emailDomain,
+        identity_provider_alias: sso.identityProviderAlias, created_by: request.actorUserId }).execute();
+    }
     await trx.insertInto('provisioning_requests').values({ actor_id: request.actorUserId,
       idempotency_key: request.idempotencyKey, payload_hash: hash, organization_id: org.id, membership_id: membership.id }).execute();
     await auditMutation(trx, request, org.id, 'organization.provision', 'organization', org.id, request.adminUserId);
+    if (sso) await auditMutation(trx, request, org.id, 'organization.sso.configure', 'organization', org.id);
     return { organizationId: org.id, membershipId: membership.id, roles: ['admin'] };
   });
 }
@@ -126,4 +153,27 @@ export async function createMember(input: MutationContext & {
     await auditMutation(trx, input, org.id, 'membership.create', 'membership', member.id, input.userId);
     return { membershipId: member.id };
   });
+}
+
+/**
+ * Pre-login home-realm discovery: which configured broker serves this email's domain.
+ * Returns only the domain and broker alias (no tenant identifiers or member data).
+ */
+export async function discoverSso(email: string): Promise<{ emailDomain: string; identityProviderAlias: string } | undefined> {
+  const at = email.lastIndexOf('@');
+  if (at < 1) return undefined;
+  const emailDomain = email.slice(at + 1).trim().toLowerCase();
+  if (!DOMAIN_PATTERN.test(emailDomain)) return undefined;
+  const row = await getDb().selectFrom('organization_sso_configs')
+    .innerJoin('organizations', 'organizations.id', 'organization_sso_configs.organization_id')
+    .select(['organization_sso_configs.email_domain', 'organization_sso_configs.identity_provider_alias'])
+    .where('organization_sso_configs.email_domain', '=', emailDomain)
+    .where('organizations.status', '=', 'active').executeTakeFirst();
+  return row ? { emailDomain: row.email_domain, identityProviderAlias: row.identity_provider_alias } : undefined;
+}
+
+/** Tenant-scoped view of the tenant's own SSO association (caller must already be authorized). */
+export async function getTenantSso(organizationId: string) {
+  return getDb().selectFrom('organization_sso_configs').select(['email_domain as emailDomain', 'identity_provider_alias as identityProviderAlias'])
+    .where('organization_id', '=', organizationId).execute();
 }

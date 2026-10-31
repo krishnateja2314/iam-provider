@@ -56,6 +56,7 @@ beforeAll(async () => {
     ['70000000-0000-0000-0000-000000000001',SEED_IDS.USER_ALICE],
     ['70000000-0000-0000-0000-000000000002',SEED_IDS.USER_BOB],
     ['70000000-0000-0000-0000-000000000003',SEED_IDS.USER_CHARLIE],
+    ['70000000-0000-0000-0000-000000000004',SEED_IDS.USER_DIANA],
   ]) await db.insertInto('authentication_identities').values({user_id:userId,issuer:process.env.JWT_ISSUER!,subject,email:null,email_verified:false})
     .onConflict(oc=>oc.columns(['issuer','subject']).doNothing()).execute();
 
@@ -528,17 +529,101 @@ describe('HTTP adversarial resource/submission validation',()=>{
     }
   });
 
-  it('selector/resource substitution attack fails on mutation endpoints', async () => {
-    // Attempting to patch submission from Acme while being in Globex (Bob is not a member of Globex anyway)
-    // Wait, let's use Alice, who is admin in Acme, but we try to grade a Globex submission while passing Acme in header
-    const result = await app.inject({
-      method: 'PATCH',
-      url: `/api/v1/submissions/${SEED_IDS.RES_GLOBEX_COURSE1}/grade`, // using some random ID from Globex, actually it's submission ID
-      headers: await headers('70000000-0000-0000-0000-000000000001'),
-      payload: { grade: 90 }
-    });
-    
-    // Either 404/403 or 400 because submission ID isn't found in Acme
-    expect([403, 404]).toContain(result.statusCode);
+  it('selector/resource substitution: a REAL Globex submission cannot be read or graded through the Acme selector', async () => {
+    const {getDb}=await import('../../src/db/connection.js');
+    const db=getDb();
+    const ALICE='70000000-0000-0000-0000-000000000001', BOB='70000000-0000-0000-0000-000000000002', DIANA='70000000-0000-0000-0000-000000000004';
+    const as=async(subject:string,org:string)=>({authorization:`Bearer ${await createTestToken({sub:subject,iss:'http://localhost:9080/realms/iam-platform',aud:'iam-backend'})}`,'x-organization-id':org});
+    // 1. Alice (Globex learner) creates a real submission in Globex through the API.
+    const created=await app.inject({method:'POST',url:'/api/v1/submissions',headers:await as(ALICE,SEED_IDS.ORG_GLOBEX),payload:{courseId:SEED_IDS.RES_GLOBEX_COURSE1,content:'Foreign-tenant fixture'}});
+    expect(created.statusCode).toBe(200);
+    const submissionId:string=created.json().submission.id;
+    try{
+      // 2. The row exists and works for its owner in its own tenant.
+      const row=await db.selectFrom('submissions').selectAll().where('id','=',submissionId).executeTakeFirstOrThrow();
+      expect(row.organization_id).toBe(SEED_IDS.ORG_GLOBEX);expect(row.user_id).toBe(SEED_IDS.USER_ALICE);expect(row.grade).toBeNull();
+      const own=await app.inject({url:`/api/v1/submissions/${submissionId}`,headers:await as(ALICE,SEED_IDS.ORG_GLOBEX)});
+      expect(own.statusCode).toBe(200);expect(own.json().submission.id).toBe(submissionId);
+
+      // 3. Same ID through the Acme selector: Alice is ACME ADMIN (strongest role) and Bob is an Acme instructor.
+      for (const subject of [ALICE,BOB]) {
+        const grade=await app.inject({method:'PATCH',url:`/api/v1/submissions/${submissionId}/grade`,headers:await as(subject,SEED_IDS.ORG_ACME),payload:{grade:99}});
+        expect(grade.statusCode).toBe(404);expect(grade.json()).not.toHaveProperty('submission');
+        const read=await app.inject({url:`/api/v1/submissions/${submissionId}`,headers:await as(subject,SEED_IDS.ORG_ACME)});
+        expect(read.statusCode).toBe(404);expect(read.json()).not.toHaveProperty('submission');
+      }
+      // Acme admin's submission list must not contain it either.
+      const list=await app.inject({url:'/api/v1/submissions',headers:await as(ALICE,SEED_IDS.ORG_ACME)});
+      expect(list.json().submissions.map((x:{id:string})=>x.id)).not.toContain(submissionId);
+      // 4. No grade change from any of the attacks.
+      expect((await db.selectFrom('submissions').select('grade').where('id','=',submissionId).executeTakeFirstOrThrow()).grade).toBeNull();
+
+      // 5. Positive control: the row IS gradeable by an authorized Globex admin, so the 404s above are tenant denials, not a missing row.
+      const legit=await app.inject({method:'PATCH',url:`/api/v1/submissions/${submissionId}/grade`,headers:await as(DIANA,SEED_IDS.ORG_GLOBEX),payload:{grade:77}});
+      expect(legit.statusCode).toBe(200);expect(legit.json().submission.grade).toBe('77');
+    }finally{
+      await db.deleteFrom('submissions').where('id','=',submissionId).execute();
+    }
+  });
+
+  it('newly provisioned third tenant: platform provisioning, allowed journeys, SSO association and cross-tenant denial', async () => {
+    const {getDb}=await import('../../src/db/connection.js');
+    const db=getDb();
+    const ALICE='70000000-0000-0000-0000-000000000001', BOB='70000000-0000-0000-0000-000000000002', CHARLIE='70000000-0000-0000-0000-000000000003';
+    const token=(subject:string,claims:Record<string,unknown>={})=>createTestToken({sub:subject,iss:'http://localhost:9080/realms/iam-platform',aud:'iam-backend',claims});
+    const tag=randomUUID().slice(0,8);
+    const slug=`third-${tag}`, emailDomain=`third-${tag}.example`, key=`third-tenant-${tag}`;
+    const provision=async(subjectToken:string)=>app.inject({method:'POST',url:'/api/v1/organizations',
+      headers:{authorization:`Bearer ${subjectToken}`,'idempotency-key':key},
+      payload:{name:'Third Tenant Institute',slug,adminUserId:SEED_IDS.USER_CHARLIE,sso:{emailDomain,identityProviderAlias:'enterprise'}}});
+    // Non-platform-admin cannot provision.
+    expect((await provision(await token(BOB))).statusCode).toBe(403);
+    const platformToken=await token(ALICE,{realm_access:{roles:['platform-admin']}});
+    const first=await provision(platformToken);
+    expect(first.statusCode).toBe(200);
+    const orgId:string=first.json().organizationId;
+    try{
+      expect((await provision(platformToken)).json().organizationId).toBe(orgId); // idempotent retry
+      const h=async(subject:string,org=orgId)=>({authorization:`Bearer ${await token(subject)}`,'x-organization-id':org});
+
+      // SSO association: public discovery for the new domain, tenant-admin view of its own config.
+      const discovered=await app.inject({url:`/api/v1/sso/discover?email=${encodeURIComponent(`new.hire@${emailDomain}`)}`});
+      expect(discovered.statusCode).toBe(200);
+      expect(discovered.json()).toEqual({emailDomain,identityProviderAlias:'enterprise',authorizationParameter:'kc_idp_hint'});
+      expect((await app.inject({url:'/api/v1/sso/discover?email=x%40unconfigured.example'})).statusCode).toBe(404);
+      const cfg=await app.inject({url:'/api/v1/sso-config',headers:await h(CHARLIE)});
+      expect(cfg.statusCode).toBe(200);expect(cfg.json().sso).toEqual([{emailDomain,identityProviderAlias:'enterprise'}]);
+
+      // Allowed journeys inside the new tenant (Charlie is a mere learner in Acme, but admin here).
+      const course=await app.inject({method:'POST',url:'/api/v1/resources',headers:await h(CHARLIE),payload:{title:'Third tenant course',status:'published'}});
+      expect(course.statusCode).toBe(200);
+      const courseId:string=course.json().resource.id;
+      const draft=await app.inject({method:'POST',url:'/api/v1/resources',headers:await h(CHARLIE),payload:{title:'Third tenant draft'}});
+      expect(draft.statusCode).toBe(200);
+      const draftId:string=draft.json().resource.id;
+      const addBob=await app.inject({method:'POST',url:'/api/v1/members',headers:await h(CHARLIE),payload:{userId:SEED_IDS.USER_BOB,roleName:'learner'}});
+      expect(addBob.statusCode).toBe(200);
+      const members=await app.inject({url:'/api/v1/members',headers:await h(CHARLIE)});
+      expect(members.json().members.map((m:{userId:string})=>m.userId).sort()).toEqual([SEED_IDS.USER_BOB,SEED_IDS.USER_CHARLIE].sort());
+      const bobList=await app.inject({url:'/api/v1/resources',headers:await h(BOB)});
+      expect(bobList.statusCode).toBe(200);
+      expect(bobList.json().resources.map((r:{id:string})=>r.id)).toEqual([courseId]);
+      const submit=await app.inject({method:'POST',url:'/api/v1/submissions',headers:await h(BOB),payload:{courseId,content:'Third tenant work'}});
+      expect(submit.statusCode).toBe(200);
+      // Bob is an Acme instructor but only a learner here: role does not leak across tenants.
+      expect((await app.inject({url:'/api/v1/members',headers:await h(BOB)})).statusCode).toBe(403);
+      expect((await app.inject({url:`/api/v1/resources/${draftId}`,headers:await h(BOB)})).statusCode).toBe(403);
+
+      // Cross-tenant denial in both directions.
+      expect((await app.inject({url:'/api/v1/resources',headers:await h(ALICE)})).statusCode).toBe(403); // platform admin, no membership
+      const inbound=await app.inject({url:`/api/v1/resources/${SEED_IDS.RES_ACME_COURSE1}`,headers:await h(CHARLIE)});
+      expect(inbound.statusCode).toBe(404);expect(inbound.json()).not.toHaveProperty('resource');
+      const outbound=await app.inject({url:`/api/v1/resources/${courseId}`,headers:await h(ALICE,SEED_IDS.ORG_ACME)}); // Acme admin
+      expect(outbound.statusCode).toBe(404);expect(outbound.json()).not.toHaveProperty('resource');
+      const acmeList=await app.inject({url:'/api/v1/resources?status=draft',headers:await h(ALICE,SEED_IDS.ORG_ACME)});
+      expect(acmeList.json().resources.map((r:{id:string})=>r.id)).not.toContain(draftId);
+    }finally{
+      await db.deleteFrom('organizations').where('id','=',orgId).execute();
+    }
   });
 });

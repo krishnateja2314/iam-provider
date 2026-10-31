@@ -120,6 +120,7 @@ export interface AuditEventTable {
 }
 
 export interface Database {
+  organization_sso_configs: OrganizationSsoConfigTable;
   policy_rules: PolicyRuleTable;
   submissions: SubmissionTable;
   provisioning_requests: ProvisioningRequestTable;
@@ -162,4 +163,13 @@ export interface PolicyRuleTable {
   resource: string;
   action: string;
   effect: 'allow' | 'deny';
+}
+
+export interface OrganizationSsoConfigTable {
+  id: Generated<string>;
+  organization_id: string;
+  email_domain: string;
+  identity_provider_alias: string;
+  created_by: string | null;
+  created_at: Generated<Date>;
 }
