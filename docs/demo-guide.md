@@ -397,6 +397,83 @@ token issuer; identities are keyed by `(issuer, subject)`, so the seed adds an e
 fixture link for the new issuer rather than merging by email. The phone run itself has not
 been recorded as evidence; the `127.0.0.1` run has (see `docs/verification-evidence.md`).
 
+### Physical phone run (step by step)
+
+**Known blocker.** The client computes the PKCE challenge with `crypto.subtle`, which browsers
+only expose in a *secure context* (HTTPS, `localhost` or `127.0.0.1`). A plain
+`http://<LAN IP>:5173` page is not one, so **Sign in** fails on a phone unless you do one of the
+following. Record which one you used.
+
+- **A (LAN, Android Chrome):** mark the three lab origins as secure with a Chrome flag (below).
+- **B (USB, Android):** forward the ports over USB so the phone uses `http://localhost`, with no
+  stack changes. This is a real phone and browser, but not a LAN run.
+- iPhone Safari has no such flag. It would need HTTPS, which the lab does not have.
+
+**Network.** Use your own phone hotspot (laptop connected to it), not campus Wi-Fi: campus
+networks often block device-to-device traffic, and this exposes synthetic credentials.
+
+**A. Laptop (PowerShell as Administrator, repository root)**
+
+```powershell
+git rev-parse HEAD                                   # note the commit for the record
+Get-NetIPConfiguration | ? IPv4DefaultGateway | % { $_.InterfaceAlias + ' ' + $_.IPv4Address.IPAddress }
+$env:IAM_PUBLIC_HOST = "<laptop IP on the hotspot>"  # e.g. 192.168.43.25
+$env:IAM_BIND_ADDRESS = "0.0.0.0"
+docker compose up -d --wait                          # recreates Keycloak/backend/clients for that host
+node scripts/configure-keycloak.mjs                  # adds the <IP> redirect URIs and broker URLs
+New-NetFirewallRule -DisplayName "IAM lab (temporary)" -Direction Inbound -Protocol TCP -LocalPort 5173,8180,3100 -Action Allow -Profile Any
+```
+
+Check from the laptop: `http://<IP>:5173/mobile.html` opens.
+
+**A. Phone (Android Chrome)**
+
+1. Open `chrome://flags`, search **Insecure origins treated as secure**, enter
+   `http://<IP>:5173,http://<IP>:8180,http://<IP>:3100`, set **Enabled**, tap **Relaunch**.
+2. Note the phone model, the Android version and the Chrome version (`chrome://version`).
+3. Start the screen recording (see *Recording*), then open `http://<IP>:5173/mobile.html`.
+
+**Script to perform while recording** (expected result in brackets)
+
+| # | Action | Expected |
+|---|---|---|
+| 1 | **Sign in with Keycloak**, log in as `alice` / `alice123` | Keycloak page is served from `<IP>:8180`; back on the app it shows signed in, `/me` shows two memberships |
+| 2 | Select **Acme**, tap **GET /resources** | 200, Acme published courses only |
+| 3 | Acme, **GET /members** | 200 (Alice is an Acme admin) |
+| 4 | Select **Globex**, **GET /resources** | 200, Globex courses only |
+| 5 | Globex, **GET /members** | **403**: the Acme admin role does not carry over |
+| 6 | **GET /sessions** | 200, shows this phone's session |
+| 7 | **Rotate refresh token** | succeeds |
+| 8 | **Sign out**, then tap any endpoint | signed out; no data |
+| 9 | **Enterprise SSO**, log in at the enterprise realm as `enterprise.bob` / `enterprise-bob123` | signed in as Bob through the broker |
+| 10 | Acme **GET /resources**, then **GET /members** | 200, then **403** (Bob is an instructor) |
+| 11 | **Sign out** | signed out |
+
+**Recording.** Android: pull down Quick Settings, tap **Screen record** (add the tile with the
+pencil icon if missing), choose *no audio* and *show touches*, start, perform the script, stop.
+The video is saved under Photos/Gallery > Movies or Screen recordings. Before you start, also take a
+laptop screenshot of the PowerShell window showing the IP, `git rev-parse HEAD` and
+`docker compose ps`. Do not record or share tokens (the app does not display them).
+
+**Undo (always)**
+
+```powershell
+Remove-NetFirewallRule -DisplayName "IAM lab (temporary)"
+Remove-Item Env:IAM_PUBLIC_HOST, Env:IAM_BIND_ADDRESS
+docker compose up -d --wait; node scripts/configure-keycloak.mjs
+```
+
+On the phone, set the Chrome flag back to **Default**.
+
+**B. USB alternative (Android, no stack changes):** enable *Developer options > USB debugging*,
+connect by USB, open `chrome://inspect/#devices` in desktop Chrome or Edge, click **Port
+forwarding**, and add `5173 -> localhost:5173`, `8180 -> localhost:8180` and
+`3100 -> localhost:3100`. Tick *Enable port forwarding*. Then on the phone open
+`http://localhost:5173/mobile.html` and run the same script. Report it as a USB-forwarded run.
+
+**What to send back for the evidence log:** the video, the laptop screenshot, the commit, the date and
+time, the phone/Android/Chrome versions, option A or B, and the status seen at each step.
+
 ## 12. Explain One Protected Request
 
 Use Bob requesting a submission as your example:
