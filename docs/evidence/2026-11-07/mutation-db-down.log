@@ -1,0 +1,13 @@
+2026-11-07T05:52:19Z
+$ docker stop iam-w5clean-postgres-1   (database only; backend keeps running)
+iam-w5clean-postgres-1
+backend running
+clients running
+keycloak running
+keycloak-db running
+Commit fde2efd76a1e30b08577118cc86540c453bf2129
+Container source matches checkout.
+Baseline (no mutation)...
+INCONCLUSIVE baseline: Vitest produced no JSON report (exit 143). 
+exit 2
+iam-w5clean-postgres-1

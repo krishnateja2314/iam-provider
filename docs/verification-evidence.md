@@ -3,7 +3,117 @@
 This file is a dated log. Each section states the exact source revision it applies to.
 A result from one revision is not evidence for another.
 
-## 2026-10-31: Current Revision `42d8a43`
+## 2026-11-07: Current Revision `fde2efd` (W5)
+
+Code revision verified: **`fde2efd76a1e30b08577118cc86540c453bf2129`** (W5: AG01 service principal
+and dependency remediation). The commit after it adds documentation, evidence logs and
+`scripts/measure-latency.mjs` only; no backend, client or realm file changes. Raw, ANSI-stripped logs are in
+[`docs/evidence/2026-11-07/`](evidence/2026-11-07/). No tokens, passwords, cookies or traces are in them.
+
+Environment: Windows 11 host, Docker Desktop 29.4.3 (Linux containers), Node 24.21.0-alpine in the
+backend image, host Node 24.20.0, Keycloak 26.8.0, PostgreSQL 16.15-alpine, Vitest 5.0.3,
+Microsoft Edge through Playwright (`IAM_BROWSER_CHANNEL=msedge`). The W4 review had not been
+returned when this run was made, so it answers the W4 report's own plan (Section 7), not new feedback.
+
+### Clean clone, new volumes, `fde2efd`
+
+`git clone` into an empty directory (no `.env`, no `node_modules`), then
+`docker compose -p iam-w5clean up -d --build --wait` with newly created volumes (none existed
+beforehand). Realm import, migrations 1-4 and seed ran from scratch. All five services were healthy
+at 2026-11-07T05:49:09Z. The project's own stack was stopped, not removed, during the run. The
+isolated stack and its volumes were removed afterwards (`docker compose -p iam-w5clean down -v`).
+
+| Check (clean stack) | Command | Result |
+|---|---|---|
+| Typecheck (source and tests) | `docker compose -p iam-w5clean exec -T backend npm run typecheck` | PASS (exit 0) |
+| Build | `... exec -T backend npm run build` | PASS (exit 0) |
+| Dependency audit | `... exec -T backend npm audit` | **found 0 vulnerabilities** (W4: 4 open) |
+| Client configuration | `node scripts/verify-client-config.mjs` | 9 of 9 PASS |
+| Complete suite incl. live provider | `IAM_ALLOW_PASSWORD_GRANT_TESTS=true node scripts/configure-keycloak.mjs --enable-test-client`, then `... exec -T backend env KEYCLOAK_INTROSPECTION=false RUN_DATABASE_TESTS=1 RUN_KEYCLOAK_TESTS=1 npm test`, then `node scripts/configure-keycloak.mjs` | **227 passed, 0 failed, 0 skipped**, 10 files |
+| W5 outcome command (from the W4 report) | `... exec -T backend env RUN_DATABASE_TESTS=1 RUN_KEYCLOAK_TESTS=1 npx vitest run tests/security/service-principal.test.ts` | **30 passed** (23 fixture/HTTP and introspection, 7 live) |
+| Mutation independence | `COMPOSE_PROJECT_NAME=iam-w5clean node scripts/verify-test-independence.mjs` | baseline 211 pass / 0 fail / 16 skip (live cases skip by design); **11 of 11 killed**, 0 survived, 0 inconclusive; working tree unchanged |
+| Runner control, database stopped | `docker stop iam-w5clean-postgres-1`, then the runner | `INCONCLUSIVE baseline`, **exit 2** |
+| Real browser PKCE/broker proof | `IAM_BROWSER_CHANNEL=msedge node scripts/verify-pkce.mjs` | **10 of 10 PASS** |
+| Alternate origin | `IAM_PUBLIC_HOST=127.0.0.1` stack + configure, then the browser proof and an AG01 smoke call | **10 of 10 PASS**; agent under issuer `127.0.0.1`: Acme list 200, Globex 403, members 403, `/me` 403 |
+
+Per-file counts of the complete suite: api 31, service-principal 30 (7 live), session-lifecycle 21 (6 live),
+provisioning-privacy 9, tenant-sso 10 (3 live), t10-audit 6, token-validation 41, startup-config 12,
+authorization 59, identity-membership 8. Logs: `clean-up.log`, `clean-checks.log`, `clean-full.log`,
+`clean-ag01.log`, `clean-mutation.log`, `mutation-db-down.log`, `clean-pkce.log`, `pkce-127.0.0.1.log`.
+
+The W4 control was repeated because the runner file changed (new mutations). Stopping PostgreSQL with
+`docker compose stop postgres` also stops the backend (a dependent), so the first attempt only proved
+"backend not running" (also exit 2). The recorded control stops the database container alone.
+
+### Dependency remediation
+
+| Advisory (W4) | Change | Result |
+|---|---|---|
+| `fastify` 5.12.5 header-validation bypass (GHSA-389g-gv7q-r4x8) | pinned `fastify` 5.12.8 (latest 5.12 patch; the fix landed in 5.12.7) | fixed |
+| `fast-uri` scheme injection (GHSA-333x-w4r6-6crp) | lockfile refresh: 3.1.9 under `ajv`, 4.2.3 under `fastify` | fixed |
+| `minimatch` globparts DoS (GHSA-g3hv-75wg-m249) via `casbin` 5.51.1 | `overrides.minimatch = 11.0.5` (casbin asks for `^10.2.1`; no 10.x fix exists, and `npm audit fix --force` would downgrade casbin to 5.24.4) | fixed; all 59 authorization cases and the Casbin deny mutation (M7) still pass |
+| `vite` 8.3.2 (dev only, via `vitest`; new since W4, high) | lockfile refresh to 8.3.6 | fixed |
+
+### W5 outcome: AG01 application service principal
+
+Design: [`adr/ADR-003-service-principals.md`](adr/ADR-003-service-principals.md). Every expected
+result from the W4 plan was observed with real Keycloak client-credentials tokens against the running API:
+
+| W4 expected result | Observed (clean stack) |
+|---|---|
+| Acme resource list: 200 | 200; every row is Acme and published |
+| Globex: 403 | 403 `TENANT_ACCESS_DENIED` (no grant in Globex) |
+| An admin action in Acme: 403 | 403 for members, audit events, SSO config and single-resource read; `/me` 403 `PRINCIPAL_KIND_NOT_ALLOWED` |
+| An expired token: 401 | client lifespan set to 2 s for one token, then restored; after 3.5 s the token gets 401 |
+| An already-issued token after the client is disabled: 401 | first request after disabling: **401, 29 ms** after the admin call started (23 ms in the complete-suite run); a new token request gets `invalid_client` |
+| Audit rows record `actor_type='service'` with the client as actor | allow and deny rows: `actor_type='service'`, `actor_id` = the service principal, `metadata.clientId='iam-agent-reporting'` |
+
+The provider issued token has `aud=iam-backend`, `azp=iam-agent-reporting`, `principal_kind=service`, no
+`sid` and no realm roles. The fixture cases add: no user, identity or membership row is ever created;
+unregistered and registry-disabled principals get 401; session-bound, client-mismatched and malformed
+`principal_kind` tokens get 401; a suspended tenant denies the agent even with a grant; a human token from
+the agent client fails the human allowlist; ten ungranted tenant actions (including POST resource, member and
+policy) get 403, and the attempted course creation leaves no row.
+
+Mutations added for the new guards, each killed on the clean stack:
+
+| ID | Guard broken on purpose | Result |
+|---|---|---|
+| M8 | Disabled service principal refused by the registry | Killed (1 test) |
+| M9 | Introspection binds the token to the client's own service account | Killed (1) |
+| M10 | Human-only routes refuse service principals | Killed (2) |
+| M11 | Grant must match the exact action | Killed (1) |
+
+Observation, not a defect in our code: re-enabling a disabled Keycloak client makes its still-unexpired
+tokens active again. Setting the registry row to `disabled` is the switch that stays off (tested).
+
+### Latency observation (performance experiment)
+
+`docker compose -p iam-w5clean exec -T backend node --input-type=module - < scripts/measure-latency.mjs`,
+inside the backend container (so the Windows Docker port forwarder, a fixed ~15 ms per request even for
+`/health`, is excluded). 3 runs x 200 sequential requests per series after 20 warm-up requests; all 1,800
+responses were 200. Log: `latency.log`.
+
+| Series (ms) | p50 run 1 / 2 / 3 | p95 run 1 / 2 / 3 |
+|---|---|---|
+| `GET /health` (no auth) | 0.70 / 0.55 / 0.48 | 1.36 / 1.47 / 1.39 |
+| Provider introspection call alone | 2.43 / 2.44 / 2.11 | 4.37 / 4.78 / 3.75 |
+| Agent `GET /api/v1/resources` (full path) | 7.23 / 6.88 / 6.17 | 9.88 / 9.97 / 9.66 |
+
+Uncached introspection is about a third of the authenticated request (median p50 2.4 of 6.9 ms). This
+is the price of rejecting a revoked or disabled credential on the next request. It is a single-machine,
+sequential observation; no throughput, concurrency or production claim is made, and no optimisation
+was attempted.
+
+### Not done / not claimed
+
+- No physical-phone run (owner: Jaya Prakash) and no independent rerun on a second machine yet.
+- AG02 (user-delegated agent), DNS domain verification, SCIM, a grant-management API and a real corporate IdP.
+- The latency numbers are not a benchmark.
+
+---
+
+## 2026-10-31: Revision `42d8a43` (W4)
 
 Code revision verified: **`42d8a43eb07a98f74b94ab6e712353bdaa643a7c`** (all code changes for
 the W3 review). The commit after it changes documentation only. Raw, ANSI-stripped logs are in

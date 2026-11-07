@@ -1,7 +1,7 @@
 # Threat Model and Security Invariants
 
 Final execution evidence is in [verification-evidence.md](verification-evidence.md):
-At revision `42d8a43` (clean clone, 2026-10-31) 197 tests passed including live provider cases, the mutation check killed 7/7, and real browser proof passed (see verification-evidence.md).
+At revision `fde2efd` (clean clone, 2026-11-07) 227 tests passed including live provider cases, the mutation check killed 11/11, real browser proof passed and npm audit reported 0 (see verification-evidence.md).
 Password reset alone kept the existing session active; final logout/revoke observations
 were 62/65/38 ms through the first denied request. These samples are not an SLA.
 

@@ -247,7 +247,7 @@ For reproducible commands, scopes and evidence slots use [traceability-matrix.md
 | Is logout immediately effective for every issued JWT? | Only configured introspection can check provider activity on the next request; provider behavior must be demonstrated. JWT-only verification accepts valid unexpired tokens. In-flight/upstream sessions are separate caveats. |
 | What if audit fails after provider revoke? | The revoke may already have happened; it cannot roll back with DB. Request and completion audits distinguish attempted from confirmed side effects. |
 | What does zero npm audit prove? | No known matched advisories at that time, not absence of authorization bugs, safe configuration, or successful provider lifecycle. |
-| Which requested extensions are not present? | Application service principals/agents/delegation, native/hardware device assurance and performance benchmarks. Provider-admin service account is infrastructure, not AG01/AG02. |
+| Which requested extensions are not present? | User-delegated agents (AG02), native/hardware device assurance and performance optimisation. AG01 (application service principal `iam-agent-reporting`) was added in W5, see ADR-003; a latency observation exists but is not a benchmark. Provider-admin service account is infrastructure, not AG01/AG02. |
 
 ## 11. Student Explain-and-Demonstrate Exercise
 

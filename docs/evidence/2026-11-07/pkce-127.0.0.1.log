@@ -1,0 +1,22 @@
+2026-11-07T05:57:40Z
+$ IAM_PUBLIC_HOST=127.0.0.1 docker compose -p iam-w5clean up -d --wait
+ Container iam-w5clean-clients-1 Healthy 
+ Container iam-w5clean-backend-1 Healthy 
+Configured iam-enterprise; existing realm data preserved
+Configured iam-platform; existing realm data preserved
+Local password-grant test client disabled
+Browser proof against issuer http://127.0.0.1:8180/realms/iam-platform, API http://127.0.0.1:3100, clients http://127.0.0.1:5173
+PASS: bounded provider service account cannot administer realm settings
+PASS: wrong PKCE verifier rejected by provider
+PASS: web local login, S256 PKCE, signed audience/type/role/subject checks
+PASS: browser tenant selector, same-user admin/learner boundary, published lists, member403, cross-tenant404 and tenant-scoped allow/deny audit
+PASS: mobile local login, S256 PKCE, signed audience/type/role/subject checks
+PASS: web enterprise OIDC broker login, S256 PKCE, signed audience/type/role/subject checks
+PASS: mobile enterprise OIDC broker login, S256 PKCE, signed audience/type/role/subject checks
+PASS: own-session listing excludes another user; deleting that real foreign session is denied
+PASS: refresh rotation and old refresh token reuse rejection
+PASS: individual session revoke immediately rejects existing access/refresh tokens; other device remains active
+PKCE browser verification complete. No tokens, traces or browser storage were exported.
+exit 0
+$ AG01 smoke check under the alternate issuer
+{"issuer":"http://127.0.0.1:8180/realms/iam-platform","acmeList":200,"globexList":403,"acmeMembers":403,"me":403}

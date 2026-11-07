@@ -1,0 +1,13 @@
+$ docker compose -p iam-w5clean exec -T backend node --input-type=module - < scripts/measure-latency.mjs   (backend code at fde2efd; script from the W5 docs commit)
+Latency observation: 3 runs x 200 sequential requests per series, API http://127.0.0.1:3100, 2026-11-07T06:00:27.572Z
+{"series":"health","run":1,"p50":0.7,"p95":1.36,"p99":1.76,"mean":0.79,"statuses":{"200":200}}
+{"series":"health","run":2,"p50":0.55,"p95":1.47,"p99":3.04,"mean":0.72,"statuses":{"200":200}}
+{"series":"health","run":3,"p50":0.48,"p95":1.39,"p99":2.93,"mean":0.59,"statuses":{"200":200}}
+{"series":"introspect","run":1,"p50":2.43,"p95":4.37,"p99":5.4,"mean":2.67,"statuses":{"200":200}}
+{"series":"introspect","run":2,"p50":2.44,"p95":4.78,"p99":6.27,"mean":2.74,"statuses":{"200":200}}
+{"series":"introspect","run":3,"p50":2.11,"p95":3.75,"p99":5.97,"mean":2.36,"statuses":{"200":200}}
+{"series":"agent-list","run":1,"p50":7.23,"p95":9.88,"p99":10.93,"mean":7.42,"statuses":{"200":200}}
+{"series":"agent-list","run":2,"p50":6.88,"p95":9.97,"p99":12.91,"mean":7.28,"statuses":{"200":200}}
+{"series":"agent-list","run":3,"p50":6.17,"p95":9.66,"p99":10.54,"mean":6.62,"statuses":{"200":200}}
+{"summary":"median across runs (ms)","health":{"p50":0.55,"p95":1.39},"introspect":{"p50":2.43,"p95":4.37},"agent-list":{"p50":6.88,"p95":9.88},"allStatus200":true}
+exit 0

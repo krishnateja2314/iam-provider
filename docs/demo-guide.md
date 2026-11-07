@@ -50,7 +50,7 @@ Run the default fixture/security suite once before the meeting:
 docker compose exec -T backend env KEYCLOAK_INTROSPECTION=false RUN_DATABASE_TESTS=1 npm test
 ```
 
-**Expected on the verified source (`42d8a43`):** 188 passed, 9 skipped, 0 failed. The skipped cases
+**Expected on the verified source (`fde2efd`):** 211 passed, 16 skipped, 0 failed. The skipped cases
 are intentionally gated live-provider lifecycle cases, not failures and not passes.
 The complete gated run is explained in section10.
 
@@ -272,6 +272,31 @@ The production validator checks actual JOSE signatures. Cases include wrong key,
 issuer, audience, expired token, ID-token substitution and malformed claims. Real DB
 cases verify concurrent first-login mapping and no email-based merging.
 
+### AG01 Reporting Agent (Service Principal)
+
+```powershell
+docker compose exec -T backend env RUN_DATABASE_TESTS=1 RUN_KEYCLOAK_TESTS=1 npx vitest run tests/security/service-principal.test.ts
+```
+
+**Expected:** 30 passed (23 fixture/introspection, 7 live). The stack must be up and
+`scripts/configure-keycloak.mjs` must have run at least once on old volumes, so the
+`iam-agent-reporting` client exists. For a live demo without the test runner:
+
+```powershell
+$t = (Invoke-RestMethod -Method Post http://localhost:8180/realms/iam-platform/protocol/openid-connect/token -Body @{grant_type='client_credentials'; client_id='iam-agent-reporting'; client_secret='dev-agent-reporting-secret'}).access_token
+Invoke-RestMethod http://localhost:3100/api/v1/resources -Headers @{Authorization="Bearer $t"; 'X-Organization-ID'='10000000-0000-0000-0000-000000000001'}   # Acme: 200
+Invoke-WebRequest http://localhost:3100/api/v1/members -Headers @{Authorization="Bearer $t"; 'X-Organization-ID'='10000000-0000-0000-0000-000000000001'} -SkipHttpErrorCheck | Select-Object StatusCode   # 403
+```
+
+`-SkipHttpErrorCheck` needs PowerShell 7. In Windows PowerShell 5.1, wrap the second call in `try { } catch { $_.Exception.Response.StatusCode }`.
+
+**Explain:** the agent is not a user. It has no membership or role, and a service token never creates a user row. It is
+allowlisted by the `service_principals` registry and can do exactly what `service_principal_grants`
+lists: list learning resources in Acme. Identity, session, consent and platform routes refuse it
+(403 `PRINCIPAL_KIND_NOT_ALLOWED`). Disabling the Keycloak client denies its already-issued token
+on the next request, because introspection is uncached. Its audit rows say `actor_type='service'`.
+See `docs/adr/ADR-003-service-principals.md`.
+
 ## 10. Complete Test Run Including Live Sessions
 
 The password-grant client is deliberately disabled by default. Enable it only for
@@ -292,7 +317,7 @@ try {
 }
 ```
 
-**Verified result (`42d8a43`, clean clone, 2026-10-31):** 197 passed, 0 failed, 0 skipped, 9 files. (2 Oct, `0d232ec`: 159.) Check the actual current
+**Verified result (`fde2efd`, clean clone, 2026-11-07):** 227 passed, 0 failed, 0 skipped, 10 files. (31 Oct, `42d8a43`: 197; 2 Oct, `0d232ec`: 159.) Check the actual current
 output before making that claim in a new environment. If configuration fails, do
 not claim the live tests ran. If disabling fails, rerun the updater before leaving.
 
@@ -412,12 +437,12 @@ in the current tenant. Installing Keycloak alone does not satisfy the latter.
 PKCE login and synthetic enterprise federation; tenant roles; resource/submission
 authorization; policy changes/deny precedence; migrations/constraints; transactional
 provisioning/quotas/status; consent/profile filtering; audit/fail-closed behavior;
-provider lifecycle integration;159 tests; browser proof; new-volume startup.
+provider lifecycle integration; AG01 application service principal; 227 tests; browser proof; new-volume startup.
 
-**Deferred:**application machine principals, user delegation, full SCIM, native mobile
-apps, hardware-attested devices, real-company domain/SSO integration and the optional
-three-run performance experiment. The provider-admin service account is infrastructure,
-not the application's optional agent feature. Local HTTP and public synthetic fixtures
+**Deferred:** user delegation (AG02), full SCIM, native mobile
+apps, hardware-attested devices and real-company domain/SSO integration. A three-run latency
+observation exists (`scripts/measure-latency.mjs`) but is not a benchmark. The provider-admin service account is infrastructure;
+the application's agent is `iam-agent-reporting` (AG01). Local HTTP and public synthetic fixtures
 are not production settings. A zero-advisory npm audit is not a security certification.
 
 The dated evidence report explains observed results and corrected intermediate

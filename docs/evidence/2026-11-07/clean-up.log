@@ -1,0 +1,17 @@
+# clean clone of fde2efd, project iam-w5clean, new volumes
+2026-11-07T05:48:12Z
+no pre-existing iam-w5clean volumes
+ Container iam-w5clean-backend-1 Waiting 
+ Container iam-w5clean-clients-1 Waiting 
+ Container iam-w5clean-postgres-1 Waiting 
+ Container iam-w5clean-postgres-1 Healthy 
+ Container iam-w5clean-keycloak-db-1 Healthy 
+ Container iam-w5clean-clients-1 Healthy 
+ Container iam-w5clean-keycloak-1 Healthy 
+ Container iam-w5clean-backend-1 Healthy 
+2026-11-07T05:49:09Z
+backend Up 5 seconds (healthy)
+clients Up 52 seconds (healthy)
+keycloak Up 47 seconds (healthy)
+keycloak-db Up 52 seconds (healthy)
+postgres Up 52 seconds (healthy)

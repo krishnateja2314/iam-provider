@@ -1,0 +1,33 @@
+$ npm run typecheck
+
+> iam-platform-backend@1.0.0 typecheck
+> tsc --noEmit && tsc -p tsconfig.test.json
+
+exit 0
+$ npm run build
+
+> iam-platform-backend@1.0.0 build
+> tsc
+
+exit 0
+$ npm audit
+found 0 vulnerabilities
+exit 0
+$ npm --prefix backend ci (host)
+npm warn install-scripts   esbuild@0.28.2 (postinstall: node install.js)
+npm warn install-scripts
+npm warn install-scripts Run `npm install-scripts ls` to review, or `npm install-scripts approve <pkg>` to allow.
+exit 0
+$ node scripts/verify-client-config.mjs
+PASS: default config targets the local lab
+PASS: alternate issuer served in /config.js (192.0.2.10)
+PASS: alternate API base served in /config.js
+PASS: CSP connect-src follows the configured origins
+PASS: CSP form-action follows the configured issuer
+PASS: alternate CSP contains no localhost origin
+PASS: config.js loads before app.js
+PASS: clients/app.js contains no hard-coded host or port
+PASS: non-http issuer is refused at client-server startup
+
+All client configuration checks passed
+exit 0

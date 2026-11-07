@@ -1,0 +1,62 @@
+Configured iam-enterprise; existing realm data preserved
+Configured iam-platform; existing realm data preserved
+Local password-grant test client ENABLED (explicit opt-in)
+2026-11-07T05:49:37Z
+
+> iam-platform-backend@1.0.0 test
+> vitest run
+
+
+ RUN  v5.0.3 /app
+
+ ✓ tests/integration/api.test.ts (31 tests) 561ms
+stdout | tests/security/service-principal.test.ts > AG01 live: iam-agent-reporting client-credentials token against the running API > an already-issued token after the client is disabled: 401
+{"event":"service-principal-disable-evidence","firstRequestStatus":401,"delayMs":23,"newTokenError":"invalid_client"}
+
+ ✓ tests/security/service-principal.test.ts (30 tests) 4184ms
+   ✓ AG01 live: iam-agent-reporting client-credentials token against the running API (7)
+     ✓ an expired token: 401 3552ms
+stdout | tests/security/session-lifecycle.test.ts > Live Keycloak issued-token lifecycle > provider logout invalidates an already issued access token and refresh token
+{"event":"provider-revocation-evidence","operation":"provider-logout","firstRequestStatus":401,"delayMs":45,"maximumAllowedMs":5000}
+
+stdout | tests/security/session-lifecycle.test.ts > Live Keycloak issued-token lifecycle > own-session API revoke rejects a foreign session and invalidates only the owned issued token
+{"event":"provider-revocation-evidence","operation":"own-session-api-revoke","firstRequestStatus":401,"delayMs":41,"maximumAllowedMs":5000}
+
+stdout | tests/security/session-lifecycle.test.ts > Live Keycloak issued-token lifecycle > admin logout-all invalidates issued user session tokens
+{"event":"provider-revocation-evidence","operation":"admin-logout-all","firstRequestStatus":401,"delayMs":26,"maximumAllowedMs":5000}
+
+stdout | tests/security/session-lifecycle.test.ts > Live Keycloak issued-token lifecycle > genuine admin password reset replaces credentials but leaves current sessions valid (routine reset)
+{"event":"password-reset-evidence","oldCredentialsAccepted":false,"newCredentialsAccepted":true,"previouslyIssuedAccessTokenStatus":200}
+
+stdout | tests/security/session-lifecycle.test.ts > Live Keycloak issued-token lifecycle > genuine admin password reset replaces credentials but leaves current sessions valid (routine reset)
+{"event":"provider-revocation-evidence","operation":"admin-logout-all","firstRequestStatus":401,"delayMs":146,"maximumAllowedMs":5000}
+
+stdout | tests/security/session-lifecycle.test.ts > Live Keycloak issued-token lifecycle > refresh rotation rejects reuse and invalidates successor refresh and issued access tokens
+{"event":"refresh-reuse-evidence","reusedRefreshStatus":400,"successorRefreshStatus":400,"successorIssuedAccessTokenStatus":401}
+
+stdout | tests/security/session-lifecycle.test.ts > Live Keycloak issued-token lifecycle
+{"event":"maximum-observed-revocation-delay","delayMs":146,"samples":4}
+
+ ✓ tests/security/session-lifecycle.test.ts (21 tests) 6305ms
+   ✓ Live Keycloak issued-token lifecycle (6)
+     ✓ expired refresh session is rejected and its issued access token becomes inactive 5074ms
+ ✓ tests/security/provisioning-privacy.test.ts (9 tests) 230ms
+ ✓ tests/security/tenant-sso.test.ts (10 tests) 416ms
+ ✓ tests/security/t10-audit.test.ts (6 tests) 34ms
+ ✓ tests/security/t03-t04-t09-token-validation.test.ts (41 tests) 170ms
+ ✓ tests/security/startup-config.test.ts (12 tests) 1176ms
+   ✓ server entry point (subprocess) (2)
+     ✓ production with KEYCLOAK_INTROSPECTION=false exits 1 before listening 519ms
+     ✓ positive control: the same entry point with safe production config listens and answers /health 651ms
+ ✓ tests/security/t05-t08-authorization.test.ts (59 tests) 168ms
+ ✓ tests/security/t01-t02-identity-membership.test.ts (8 tests) 30ms
+
+ Test Files  10 passed (10)
+      Tests  227 passed (227)
+   Start at  05:49:38
+   Duration  15.49s (tests 90%, import 7%, transform 2%, setup 1%)
+
+exit 0
+Configured iam-enterprise; existing realm data preserved
+Configured iam-platform; existing realm data preserved
+Local password-grant test client disabled

@@ -1,0 +1,45 @@
+$ docker compose -p iam-w5clean exec -T backend env RUN_DATABASE_TESTS=1 RUN_KEYCLOAK_TESTS=1 npx vitest run tests/security/service-principal.test.ts --reporter=verbose
+2026-11-07T05:50:01Z
+
+ RUN  v5.0.3 /app
+
+ ✓ tests/security/service-principal.test.ts > AG01 service principal through the API (signed fixtures, real PostgreSQL) > lists only published Acme resources with its single grant (200) 19ms
+ ✓ tests/security/service-principal.test.ts > AG01 service principal through the API (signed fixtures, real PostgreSQL) > is refused in Globex, where it holds no grant (403) 4ms
+ ✓ tests/security/service-principal.test.ts > AG01 service principal through the API (signed fixtures, real PostgreSQL) > cannot perform admin or other ungranted actions in Acme (403) 36ms
+ ✓ tests/security/service-principal.test.ts > AG01 service principal through the API (signed fixtures, real PostgreSQL) > human-only routes refuse service principals (403 PRINCIPAL_KIND_NOT_ALLOWED) 12ms
+ ✓ tests/security/service-principal.test.ts > AG01 service principal through the API (signed fixtures, real PostgreSQL) > unregistered and disabled service principals are rejected with 401 4ms
+ ✓ tests/security/service-principal.test.ts > AG01 service principal through the API (signed fixtures, real PostgreSQL) > an expired service token is rejected with 401 2ms
+ ✓ tests/security/service-principal.test.ts > AG01 service principal through the API (signed fixtures, real PostgreSQL) > a service token that carries a user session (sid) is rejected with 401 2ms
+ ✓ tests/security/service-principal.test.ts > AG01 service principal through the API (signed fixtures, real PostgreSQL) > a service token that carries a user session (session_state) is rejected with 401 2ms
+ ✓ tests/security/service-principal.test.ts > AG01 service principal through the API (signed fixtures, real PostgreSQL) > a service token that claims a different client_id is rejected with 401 2ms
+ ✓ tests/security/service-principal.test.ts > AG01 service principal through the API (signed fixtures, real PostgreSQL) > a service token that uses an unknown principal kind is rejected with 401 2ms
+ ✓ tests/security/service-principal.test.ts > AG01 service principal through the API (signed fixtures, real PostgreSQL) > a service token that uses a non-string principal kind is rejected with 401 2ms
+ ✓ tests/security/service-principal.test.ts > AG01 service principal through the API (signed fixtures, real PostgreSQL) > a token for the agent client without principal_kind is judged as a human token and fails the human allowlist 2ms
+ ✓ tests/security/service-principal.test.ts > AG01 service principal through the API (signed fixtures, real PostgreSQL) > never creates a user, identity or membership for a service token 6ms
+ ✓ tests/security/service-principal.test.ts > AG01 service principal through the API (signed fixtures, real PostgreSQL) > a suspended tenant denies the service principal even with a grant 8ms
+ ✓ tests/security/service-principal.test.ts > AG01 service principal through the API (signed fixtures, real PostgreSQL) > audit rows record actor_type=service with the service principal as actor and its client 10ms
+ ✓ tests/security/service-principal.test.ts > AG01 provider introspection binding for service tokens > accepts an active token issued to the same client and bound to its service account 15ms
+ ✓ tests/security/service-principal.test.ts > AG01 provider introspection binding for service tokens > rejects a human user token relabelled as a service token 1ms
+ ✓ tests/security/service-principal.test.ts > AG01 provider introspection binding for service tokens > rejects a token the provider reports inactive (client disabled or token expired) 0ms
+ ✓ tests/security/service-principal.test.ts > AG01 provider introspection binding for service tokens > rejects a token the provider reports issued to another client 0ms
+ ✓ tests/security/service-principal.test.ts > AG01 provider introspection binding for service tokens > rejects a token the provider reports for another subject 0ms
+ ✓ tests/security/service-principal.test.ts > AG01 provider introspection binding for service tokens > rejects a token the provider reports without the provider principal kind 0ms
+ ✓ tests/security/service-principal.test.ts > AG01 provider introspection binding for service tokens > rejects a token the provider reports bound to a user session 0ms
+ ✓ tests/security/service-principal.test.ts > AG01 provider introspection binding for service tokens > a provider outage is a dependency failure (503), not an invalid credential 0ms
+ ✓ tests/security/service-principal.test.ts > AG01 live: iam-agent-reporting client-credentials token against the running API > the provider issues a client-credentials token with the expected audience, principal kind and no user session 8ms
+ ✓ tests/security/service-principal.test.ts > AG01 live: iam-agent-reporting client-credentials token against the running API > Acme resource list: 200, tenant-filtered and published only 30ms
+ ✓ tests/security/service-principal.test.ts > AG01 live: iam-agent-reporting client-credentials token against the running API > Globex: 403 14ms
+ ✓ tests/security/service-principal.test.ts > AG01 live: iam-agent-reporting client-credentials token against the running API > an admin action in Acme: 403 56ms
+ ✓ tests/security/service-principal.test.ts > AG01 live: iam-agent-reporting client-credentials token against the running API > an expired token: 401 3534ms
+stdout | tests/security/service-principal.test.ts > AG01 live: iam-agent-reporting client-credentials token against the running API > an already-issued token after the client is disabled: 401
+{"event":"service-principal-disable-evidence","firstRequestStatus":401,"delayMs":29,"newTokenError":"invalid_client"}
+
+ ✓ tests/security/service-principal.test.ts > AG01 live: iam-agent-reporting client-credentials token against the running API > an already-issued token after the client is disabled: 401 75ms
+ ✓ tests/security/service-principal.test.ts > AG01 live: iam-agent-reporting client-credentials token against the running API > audit rows record actor_type='service' with the agent as actor 36ms
+
+ Test Files  1 passed (1)
+      Tests  30 passed (30)
+   Start at  05:50:02
+   Duration  4.49s (tests 93%, import 4%, transform 3%)
+
+exit 0

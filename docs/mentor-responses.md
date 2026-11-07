@@ -1,3 +1,15 @@
+# Week 4 Review - Not Received (W5 Note)
+
+No review of the Week 4 report had been received by 7 November 2026. In W5 we therefore carried
+out the plan in Section 7 of that report, exactly as written: dependency remediation first, then
+the AG01 service principal with the stated command and expected results, then a full clean-clone
+rerun. Results and logs: [verification-evidence.md](verification-evidence.md) (2026-11-07,
+revision `fde2efd`) and [ADR-003](adr/ADR-003-service-principals.md).
+
+Our Week 2 answer 7 below described a planned performance *improvement*. We did not do that. W5 adds
+only a latency *observation* of the unchanged request path (`scripts/measure-latency.mjs`), so
+no improvement is claimed.
+
 # Mentor Review Responses - Week 3
 
 Revision: code `42d8a43` (evidence in `verification-evidence.md`, section 2026-10-31).

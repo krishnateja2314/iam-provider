@@ -30,9 +30,9 @@ and tests that actively try to break it.
 - **Shape:** a modular monolith, meaning one Fastify process, one PostgreSQL database,
   and five Docker containers in total.
 
-**Proof.** 159/159 tests pass (16 of them against a live Keycloak). After logout, the
-old token is rejected on the very next request, 38–65 ms later. A separate script
-deliberately breaks the guards and confirms the tests then fail.
+**Proof.** 227/227 tests pass from a clean clone (16 of them against a live Keycloak). After logout, the
+old token is rejected on the very next request, 26–146 ms later. A separate script
+breaks 11 security guards one at a time and the tests catch all 11.
 
 ---
 
@@ -179,18 +179,22 @@ Code to show if asked: `backend/src/middleware.ts` (gates 1–2) and
 
 | Claim | Number |
 |---|---|
-| Tests | **159 passed, 0 failed, 0 skipped**, run on 2 Oct 2026 |
+| Tests | **227 passed, 0 failed, 0 skipped**, clean clone of `fde2efd`, 7 Nov 2026 |
 | Biggest suite | Authorization: **59** (48 role cases + 11 boundary cases) |
 | Token validation cases | **41** |
-| Live Keycloak session tests | **16** |
-| Logout → old token rejected | **62 ms** logout, **65 ms** revoke one session, **38 ms** logout-all (3 local samples, not an SLA) |
+| Live Keycloak tests | **16** (6 session, 3 SSO, 7 agent) |
+| Agent (AG01) tests | **30**; Acme list 200, Globex 403, admin 403, expired 401, disabled 401 |
+| Mutation check | **11 of 11** broken guards caught |
+| Logout → old token rejected | **45 ms** logout, **41 ms** revoke one session, **26 / 146 ms** logout-all (local samples, not an SLA) |
+| Introspection cost | about **2.4 ms** of a **6.9 ms** agent request (p50, one machine) |
 | Dependency audit | `npm audit`: **0 vulnerabilities** |
 
 What testing taught us:
 - A **password reset does NOT end existing sessions**. The old token kept returning
   200, so incident response must be *reset the password plus logout-all*.
 - **Refresh replay** kills the whole token family: 400 / 400 / 401.
-- `scripts/verify-test-independence.mjs` breaks the guards on purpose, and the tests fail.
+- `scripts/verify-test-independence.mjs` breaks 11 guards on purpose, one at a time, and the tests catch each one.
+- Re-enabling a disabled Keycloak client makes its old tokens valid again, so the agent registry has its own off switch.
 
 ---
 
@@ -209,13 +213,15 @@ What testing taught us:
 | Can a platform admin read any tenant's data? | No. Platform admin can create and suspend organizations, but tenant access still requires membership. |
 | How do you add a third organization? | `POST /api/v1/organizations` with an idempotency key. No code changes needed, and safe to retry. |
 | How do you know your tests mean anything? | The mutation script removes the checks and the tests go red. |
+| How is the agent different from a user? | It uses client credentials, has no membership or role, never gets a user row, and can only do what its grant lists (list courses in Acme). Human-only routes refuse it. |
 
 ---
 
 ## 8. What is left (say it confidently, not apologetically)
 
-- **Not built:** AI agent delegation (design: *agent permission = user permission ∩
-  delegated scope ∩ tenant*), service accounts, full SCIM, and a p95 performance experiment.
+- **Built in W5:** the AG01 reporting agent as a service principal, and a latency observation (not an optimisation).
+- **Not built:** AI agents acting for a user (design: *agent permission = user permission ∩
+  delegated scope ∩ tenant*), a grant-management API, full SCIM, and performance optimisation.
 - **Lab setup only:** Keycloak in dev mode over plain HTTP, synthetic passwords, no rate limiting.
 - **Mobile** is a responsive web page, not a native app. **Enterprise SSO** is a second
   Keycloak realm, not a real company's identity provider, and there's no SAML.

@@ -1,0 +1,14 @@
+2026-11-07T05:51:49Z
+Browser proof against issuer http://localhost:8180/realms/iam-platform, API http://localhost:3100, clients http://localhost:5173
+PASS: bounded provider service account cannot administer realm settings
+PASS: wrong PKCE verifier rejected by provider
+PASS: web local login, S256 PKCE, signed audience/type/role/subject checks
+PASS: browser tenant selector, same-user admin/learner boundary, published lists, member403, cross-tenant404 and tenant-scoped allow/deny audit
+PASS: mobile local login, S256 PKCE, signed audience/type/role/subject checks
+PASS: web enterprise OIDC broker login, S256 PKCE, signed audience/type/role/subject checks
+PASS: mobile enterprise OIDC broker login, S256 PKCE, signed audience/type/role/subject checks
+PASS: own-session listing excludes another user; deleting that real foreign session is denied
+PASS: refresh rotation and old refresh token reuse rejection
+PASS: individual session revoke immediately rejects existing access/refresh tokens; other device remains active
+PKCE browser verification complete. No tokens, traces or browser storage were exported.
+exit 0
