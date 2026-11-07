@@ -394,8 +394,8 @@ For a physical phone on the same Wi-Fi use the computer's LAN IP and also set
 `IAM_BIND_ADDRESS=0.0.0.0`. That exposes synthetic development credentials to the local
 network: do it only on a trusted network and revert afterwards. Changing the host changes the
 token issuer; identities are keyed by `(issuer, subject)`, so the seed adds an explicit
-fixture link for the new issuer rather than merging by email. The phone run itself has not
-been recorded as evidence; the `127.0.0.1` run has (see `docs/verification-evidence.md`).
+fixture link for the new issuer rather than merging by email. A physical phone run was recorded
+on 2026-11-07 with option A below (`docs/evidence/2026-11-07/phone-run.md`).
 
 ### Physical phone run (step by step)
 

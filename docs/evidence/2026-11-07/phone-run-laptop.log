@@ -1,0 +1,16 @@
+﻿# Physical phone run, laptop side (option A: LAN via phone hotspot)
+time (UTC): 2026-11-07T06:26:02Z
+commit: 853956dde59be978cbc3cf5b7960cca608f4ec8c  (backend/client/realm code identical to fde2efd)
+network: Wi-Fi SSID 'Kt' (phone hotspot), laptop IP 10.107.185.161, Ethernet disconnected
+IAM_PUBLIC_HOST=10.107.185.161 IAM_BIND_ADDRESS=0.0.0.0; docker compose up -d --wait; node scripts/configure-keycloak.mjs
+firewall: existing 'Docker Desktop Backend' inbound allow rule (Public profile); no extra rule added
+
+backend  Up 43 seconds (healthy)  0.0.0.0:3100->3100/tcp
+clients  Up About a minute (healthy)  0.0.0.0:5173->5173/tcp
+keycloak  Up 59 seconds (healthy)  0.0.0.0:8180->8080/tcp
+keycloak-db  Up 25 minutes (healthy)  5432/tcp
+postgres  Up 25 minutes (healthy)  5432/tcp
+
+config.js: window.IAM_CONFIG = Object.freeze({"issuer":"http://10.107.185.161:8180/realms/iam-platform","apiBase":"http://10.107.185.161:3100"});
+issuer:    http://10.107.185.161:8180/realms/iam-platform
+api:       ok

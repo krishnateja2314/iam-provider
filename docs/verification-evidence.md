@@ -107,7 +107,8 @@ was attempted.
 
 ### Not done / not claimed
 
-- No physical-phone run (owner: Jaya Prakash) and no independent rerun on a second machine yet.
+- No independent rerun on a second machine yet (owner: Jaya Prakash).
+- Physical phone: **done the same day** on a realme 11 Pro+ 5G, Android 15, Chrome 156, over the phone's hotspot. All 10 steps behaved as expected, including Globex `/members` 403 for Alice and Acme `/members` 403 for the brokered enterprise user. The Chrome secure-origin flag was needed, because PKCE uses `crypto.subtle`. See [`evidence/2026-11-07/phone-run.md`](evidence/2026-11-07/phone-run.md).
 - AG02 (user-delegated agent), DNS domain verification, SCIM, a grant-management API and a real corporate IdP.
 - The latency numbers are not a benchmark.
 
