@@ -11,6 +11,14 @@ export interface AuthenticatedUser {
   issuer: string;
   providerSessionId?: string;
   platformAdmin?: boolean;
+  /**
+   * 'human' callers resolve to a platform user and memberships. 'service' callers (AG01) resolve
+   * to a registered service principal; userId then holds the service principal ID and authority
+   * comes only from explicit per-tenant grants, never from roles or memberships.
+   */
+  principalKind?: 'human' | 'service';
+  /** OAuth client of a service principal (token azp). */
+  clientId?: string;
 }
 
 export interface TenantContext {

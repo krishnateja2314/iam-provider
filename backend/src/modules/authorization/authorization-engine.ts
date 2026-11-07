@@ -1,6 +1,7 @@
 import { newEnforcer, newModelFromString, StringAdapter } from 'casbin';
 import { getDb } from '../../db/connection.js';
 import type { AuthorizationDecision, AuthorizationRequest } from '../../common/types.js';
+import { authorizeServicePrincipal } from '../service-principal/service-principal-service.js';
 
 const MODEL = `
 [request_definition]
@@ -31,6 +32,9 @@ export async function authorize(request: AuthorizationRequest): Promise<Authoriz
   const deny = (reason: string, policy='boundary-deny'): AuthorizationDecision => ({allowed:false,reason,policy});
   try {
     const db = getDb();
+    const resource = request.resource === 'course' ? 'learning-resource' : request.resource === 'member' || request.resource === 'user' ? 'member' : request.resource === 'assignment' ? 'submission' : request.resource;
+    // AG01: service principals have no membership or role; only explicit grants apply.
+    if (request.subject.principalKind === 'service') return await authorizeServicePrincipal(request, resource);
     const membership = await db.selectFrom('memberships')
       .innerJoin('organizations','organizations.id','memberships.organization_id')
       .select(['memberships.id','memberships.status','organizations.status as orgStatus'])
@@ -42,7 +46,6 @@ export async function authorize(request: AuthorizationRequest): Promise<Authoriz
       .select('roles.name').where('membership_roles.membership_id','=',membership.id)
       .where('roles.organization_id','=',request.organization).execute();
     const roles = rows.map(row=>row.name);
-    const resource = request.resource === 'course' ? 'learning-resource' : request.resource === 'member' || request.resource === 'user' ? 'member' : request.resource === 'assignment' ? 'submission' : request.resource;
     let courseId = request.resourceId;
     if (resource === 'learning-resource' && courseId) {
       const course = await db.selectFrom('learning_resources').select(['status','id'])

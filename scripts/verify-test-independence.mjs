@@ -62,6 +62,27 @@ export const MUTATIONS = [
     find: 'e = some(where (p.eft == allow)) && !some(where (p.eft == deny))',
     replace: 'e = some(where (p.eft == allow))',
     expect: ['explicit deny overrides an admin allow', 'explicit deny on one role wins over an allow on another role'] },
+  // W5 / AG01 service principal guards.
+  { id: 'M8', guard: 'Service principal registry: disabled principal refused',
+    file: 'src/modules/service-principal/service-principal-service.ts',
+    find: "if (!row || row.status !== 'active') throw new AuthenticationError('Unregistered or disabled service principal');",
+    replace: "if (!row) throw new AuthenticationError('Unregistered or disabled service principal');",
+    expect: ['unregistered and disabled service principals are rejected with 401'] },
+  { id: 'M9', guard: 'Service token bound to its client service account at introspection',
+    file: 'src/modules/auth/session-service.ts',
+    find: "claims.client_id !== client || claims.username !== `service-account-${client}`.toLowerCase() ||",
+    replace: 'claims.client_id !== client ||',
+    expect: ['rejects a human user token relabelled as a service token'] },
+  { id: 'M10', guard: 'Human-only routes refuse service principals',
+    file: 'src/middleware.ts',
+    find: 'if (!allowService) {',
+    replace: 'if (false) {',
+    expect: ['human-only routes refuse service principals'] },
+  { id: 'M11', guard: 'Service grant matches the exact action',
+    file: 'src/modules/service-principal/service-principal-service.ts',
+    find: ".where('resource', '=', resource).where('action', '=', request.action)",
+    replace: ".where('resource', '=', resource)",
+    expect: ['cannot perform admin or other ungranted actions in Acme'] },
 ].filter(m => !only || only.includes(m.id));
 
 const INFRA = /ECONNREFUSED|ENOTFOUND|EAI_AGAIN|getaddrinfo|Connection terminated|password authentication failed|Cannot find module|SyntaxError|Transform failed/i;

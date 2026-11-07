@@ -5,7 +5,7 @@
 import * as jose from 'jose';
 import type { AuthenticatedUser } from '../../common/types.js';
 import { AuthenticationError, DependencyError } from '../../common/types.js';
-import { introspectAccessToken, providerSessionId } from './session-service.js';
+import { introspectAccessToken, introspectServiceToken, providerSessionId } from './session-service.js';
 import { introspectionDisableAllowed } from '../../config.js';
 
 let jwks: jose.JWTVerifyGetKey | null = null;
@@ -90,7 +90,7 @@ export async function validateAccessToken(
     if (payload.iat !== undefined && (typeof payload.iat !== 'number' || !Number.isFinite(payload.iat) || payload.iat > Date.now() / 1000 + 5 || payload.iat >= payload.exp!)) {
       throw new AuthenticationError('Invalid issued-at claim');
     }
-    for (const claim of ['email', 'preferred_username', 'name', 'azp', 'scope', 'sid', 'session_state', 'identity_provider', 'identity_provider_identity', 'broker_session_id', 'broker_user_id', 'idp']) {
+    for (const claim of ['email', 'preferred_username', 'name', 'azp', 'client_id', 'scope', 'sid', 'session_state', 'identity_provider', 'identity_provider_identity', 'broker_session_id', 'broker_user_id', 'idp']) {
       if (payload[claim] !== undefined && (typeof payload[claim] !== 'string' || !String(payload[claim]).trim())) {
         throw new AuthenticationError(`Invalid token claim: ${claim}`);
       }
@@ -108,6 +108,22 @@ export async function validateAccessToken(
     }
     if (payload.resource_access !== undefined && (!payload.resource_access || typeof payload.resource_access !== 'object' || Array.isArray(payload.resource_access) || !Object.values(payload.resource_access).every(validRoleSet))) {
       throw new AuthenticationError('Invalid token claim: resource_access');
+    }
+    // AG01: the provider stamps client-credentials tokens of agent clients with principal_kind=service.
+    // Any other value is malformed. A service token is never treated as a human login.
+    const principalKind = payload.principal_kind;
+    if (principalKind !== undefined && principalKind !== 'service') {
+      throw new AuthenticationError('Invalid token claim: principal_kind');
+    }
+    if (principalKind === 'service') {
+      if (typeof payload.azp !== 'string' || !payload.azp.trim()) throw new AuthenticationError('Service token missing authorized party');
+      if (payload.client_id !== undefined && payload.client_id !== payload.azp) throw new AuthenticationError('Service token client mismatch');
+      // Client credentials create no user session; a session-bound token is not a service credential.
+      if (payload.sid !== undefined || payload.session_state !== undefined) throw new AuthenticationError('Service token must not carry a user session');
+      // The human azp allowlist does not apply: service clients are allowlisted by the service
+      // principal registry, checked by the caller (middleware) before any tenant decision.
+      if (introspectionEnabled) await introspectServiceToken(token, payload);
+      return payload;
     }
     const allowed = options.authorizedParties ?? (process.env.KEYCLOAK_ALLOWED_AZP?.trim() ? process.env.KEYCLOAK_ALLOWED_AZP.split(',').map(value => value.trim()).filter(Boolean) : undefined);
     if (allowed && (typeof payload.azp !== 'string' || !allowed.includes(payload.azp))) {

@@ -5,12 +5,13 @@ import { getDb } from './db/connection.js';
 import { authorize } from './modules/authorization/authorization-engine.js';
 import { recordAuditEvent, queryAuditEvents } from './modules/audit/audit-service.js';
 import { listUserOrganizations } from './modules/organization/membership-service.js';
-import { authenticationHook, tenantContextHook, ownMembershipHook, auditRequest, UUID_PATTERN, isUuid } from './middleware.js';
+import { authenticationHook, principalAuthenticationHook, tenantContextHook, ownMembershipHook, auditRequest, UUID_PATTERN, isUuid } from './middleware.js';
 import { provisionOrganization, setOrganizationStatus, createMember, ProvisioningError, lockOrganization, discoverSso, getTenantSso } from './modules/provisioning/provisioning-service.js';
 import { getSharedProfile, recordConsent } from './modules/user/privacy-service.js';
 import { listProviderSessions, revokeProviderSession, resetProviderSessions } from './modules/auth/session-service.js';
 
-const tenantHooks = [authenticationHook,tenantContextHook];
+// Tenant routes accept human and service principals; every allow then goes through permit().
+const tenantHooks = [principalAuthenticationHook,tenantContextHook];
 // Admits suspended members of the selected tenant; used only for consent withdrawal.
 const ownMembershipHooks = [authenticationHook,ownMembershipHook];
 const uuid = {type:'string',pattern:UUID_PATTERN};

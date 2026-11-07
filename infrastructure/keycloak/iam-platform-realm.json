@@ -78,6 +78,15 @@
       "protocolMappers": [{"name": "bounded-admin-roles", "protocol": "openid-connect", "protocolMapper": "oidc-usermodel-client-role-mapper", "config": {"usermodel.clientRoleMapping.clientId": "realm-management", "claim.name": "resource_access.realm-management.roles", "jsonType.label": "String", "multivalued": "true", "access.token.claim": "true", "id.token.claim": "false"}}]
     },
     {
+      "clientId": "iam-agent-reporting", "name": "AG01 reporting agent: application service principal, client credentials only",
+      "enabled": true, "protocol": "openid-connect", "publicClient": false,
+      "clientAuthenticatorType": "client-secret", "secret": "dev-agent-reporting-secret",
+      "standardFlowEnabled": false, "implicitFlowEnabled": false, "directAccessGrantsEnabled": false, "serviceAccountsEnabled": true,
+      "fullScopeAllowed": false, "defaultClientScopes": ["basic", "iam-api"], "optionalClientScopes": [],
+      "attributes": {"client_credentials.use_refresh_token": "false", "access.token.lifespan": "60"},
+      "protocolMappers": [{"name": "principal-kind", "protocol": "openid-connect", "protocolMapper": "oidc-hardcoded-claim-mapper", "config": {"claim.name": "principal_kind", "claim.value": "service", "jsonType.label": "String", "access.token.claim": "true", "id.token.claim": "false", "userinfo.token.claim": "false", "introspection.token.claim": "true"}}]
+    },
+    {
       "clientId": "iam-test", "name": "DISABLED: opt-in local password-grant integration tests only",
       "enabled": false, "protocol": "openid-connect", "publicClient": false,
       "clientAuthenticatorType": "client-secret", "secret": "dev-test-client-secret",
@@ -111,6 +120,7 @@
     {"id": "70000000-0000-0000-0000-000000000003", "username": "charlie", "email": "charlie@example.com", "firstName": "Charlie", "lastName": "Davis", "enabled": true, "emailVerified": true, "credentials": [{"type": "password", "value": "charlie123", "temporary": false}]},
     {"id": "70000000-0000-0000-0000-000000000004", "username": "diana", "email": "diana@example.com", "firstName": "Diana", "lastName": "Martinez", "enabled": true, "emailVerified": true, "credentials": [{"type": "password", "value": "diana123", "temporary": false}]},
     {"id": "70000000-0000-0000-0000-000000000005", "username": "eve", "email": "eve@example.com", "firstName": "Eve", "lastName": "Wilson", "enabled": true, "emailVerified": true, "credentials": [{"type": "password", "value": "eve123", "temporary": false}]},
-    {"username": "service-account-iam-provider-admin", "enabled": true, "serviceAccountClientId": "iam-provider-admin", "clientRoles": {"realm-management": ["manage-users", "view-users", "query-users"]}}
+    {"username": "service-account-iam-provider-admin", "enabled": true, "serviceAccountClientId": "iam-provider-admin", "clientRoles": {"realm-management": ["manage-users", "view-users", "query-users"]}},
+    {"username": "service-account-iam-agent-reporting", "enabled": true, "serviceAccountClientId": "iam-agent-reporting"}
   ]
 }

@@ -77,7 +77,7 @@ not mean passed. Paths below are relative to `backend/`, unless otherwise specif
 
 | Item | Status / required future evidence |
 |---|---|
-| AG01 application machine identity | NOT IMPLEMENTED; provider infrastructure service account is not an app principal. Add dedicated tenant/action/audience policy and expiry/disablement tests. |
+| AG01 application machine identity | IMPLEMENTED (W5, ADR-003): `iam-agent-reporting` client-credentials client, `principal_kind=service`, registry + exact grant (Acme `learning-resource:list`), human-only routes refuse it, `actor_type='service'` audit. `service-principal.test.ts` (23 fixture + 7 live) and mutations M8-M11. |
 | AG02 user-delegated agent | NOT IMPLEMENTED; require permission intersection, grant expiry/revocation and delegator role-loss tests. |
 | Native/hardware device identity | NOT IMPLEMENTED; provider session references are the baseline. |
 | Full SCIM | NOT IMPLEMENTED; transactional application provisioning is the approved minimal slice. |

@@ -120,6 +120,8 @@ export interface AuditEventTable {
 }
 
 export interface Database {
+  service_principals: ServicePrincipalTable;
+  service_principal_grants: ServicePrincipalGrantTable;
   organization_sso_configs: OrganizationSsoConfigTable;
   policy_rules: PolicyRuleTable;
   submissions: SubmissionTable;
@@ -171,5 +173,25 @@ export interface OrganizationSsoConfigTable {
   email_domain: string;
   identity_provider_alias: string;
   created_by: string | null;
+  created_at: Generated<Date>;
+}
+
+export interface ServicePrincipalTable {
+  id: Generated<string>;
+  issuer: string;
+  client_id: string;
+  display_name: string;
+  status: 'active' | 'disabled';
+  created_at: Generated<Date>;
+  updated_at: Generated<Date>;
+}
+
+export interface ServicePrincipalGrantTable {
+  id: Generated<string>;
+  service_principal_id: string;
+  organization_id: string;
+  resource: string;
+  action: string;
+  granted_by: string | null;
   created_at: Generated<Date>;
 }

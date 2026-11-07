@@ -67,7 +67,8 @@ With introspection disabled, an already-issued valid access token can remain usa
 - The profile route requests the fixed userId/displayName/bio allowlist; tests must verify the public route omits bio after withdrawal and never emits identity metadata. Service-level projection tests are not automatically HTTP evidence.
 - Authorization fact reads and later mutation commits are not universally serialized together. Role removal/suspension during an in-flight operation needs an explicit consistency policy and adversarial tests beyond next-request checks.
 - Development HTTP, provider `start-dev`, sample passwords/secrets and a browser mobile demo are not production hardening or native-app secure storage.
-- Optional service principals, agent delegation, tenant-specific real enterprise onboarding, hardware device attestation and performance benchmarks are **NOT IMPLEMENTED**.
+- Application service principals (AG01) are implemented with a registry and exact per-tenant grants (ADR-003); grants have no management API, and re-enabling a disabled Keycloak client revives unexpired tokens unless the registry row is disabled.
+- Agent delegation, tenant-specific real enterprise onboarding, hardware device attestation and performance benchmarks are **NOT IMPLEMENTED**.
 
 ## Verification Discipline
 

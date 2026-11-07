@@ -189,6 +189,16 @@ async function seed() {
           VALUES ($1, $2, $3, $4, true) ON CONFLICT (issuer, subject) DO NOTHING`, [userId, configuredIssuer, subject, email]);
       }
     }
+    // AG01: the reporting agent is an application service principal, registered by the issuer it
+    // runs under and its OAuth client. It holds exactly one grant: list learning resources in Acme.
+    // Idempotent and outside the first-seed block, so existing volumes gain it on restart.
+    const agentIssuer = configuredIssuer || DEFAULT_FIXTURE_ISSUER;
+    new URL(agentIssuer);
+    await client.query(`INSERT INTO service_principals (issuer, client_id, display_name, status)
+      VALUES ($1, 'iam-agent-reporting', 'AG01 reporting agent', 'active') ON CONFLICT (issuer, client_id) DO NOTHING`, [agentIssuer]);
+    await client.query(`INSERT INTO service_principal_grants (service_principal_id, organization_id, resource, action)
+      SELECT id, $2, 'learning-resource', 'list' FROM service_principals WHERE issuer = $1 AND client_id = 'iam-agent-reporting'
+      ON CONFLICT (service_principal_id, organization_id, resource, action) DO NOTHING`, [agentIssuer, IDS.ORG_ACME]);
     await client.query(`INSERT INTO learning_resources (id,organization_id,title,resource_type,status,created_by)
       VALUES ('50000000-0000-0000-0000-000000000005',$1,'Unpublished synthetic course','course','draft',$2)
       ON CONFLICT (id) DO NOTHING`,[IDS.ORG_ACME,IDS.USER_BOB]);

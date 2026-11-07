@@ -39,19 +39,38 @@ function credentials(admin = false): { client_id: string; client_secret: string 
   return { client_id: (admin ? process.env.KEYCLOAK_ADMIN_CLIENT_ID : process.env.KEYCLOAK_CLIENT_ID) || (admin ? 'iam-provider-admin' : 'iam-backend'), client_secret: secret };
 }
 
-/** No cache: every configured API authentication asks the provider about current state. */
-export async function introspectAccessToken(token: string, verifiedClaims: JWTPayload): Promise<void> {
+async function introspect(token: string, verifiedClaims: JWTPayload): Promise<JWTPayload> {
   const url = realmUrl(verifiedClaims.iss);
   url.pathname += '/protocol/openid-connect/token/introspect';
   const response = await providerFetch(url, {
     method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({ ...credentials(), token, token_type_hint: 'access_token' }),
   });
-  let claims: JWTPayload;
-  try { claims = await response.json() as JWTPayload; } catch { throw new DependencyError('Malformed provider introspection'); }
+  try { return await response.json() as JWTPayload; } catch { throw new DependencyError('Malformed provider introspection'); }
+}
+
+/** No cache: every configured API authentication asks the provider about current state. */
+export async function introspectAccessToken(token: string, verifiedClaims: JWTPayload): Promise<void> {
+  const claims = await introspect(token, verifiedClaims);
   const expectedSession = providerSessionId(verifiedClaims);
   if (!claims || claims.active !== true || claims.sub !== verifiedClaims.sub || !expectedSession || providerSessionId(claims) !== expectedSession) {
     throw new AuthenticationError('Provider session is inactive or does not match token');
+  }
+}
+
+/**
+ * AG01: a client-credentials token has no user session to check. The provider must instead report
+ * it active (so a disabled client or an expired token is rejected on the next request), issued to
+ * the same client, and bound to that client's own service-account user. The username check stops a
+ * human token from passing as a service token even if a mapper were misconfigured.
+ */
+export async function introspectServiceToken(token: string, verifiedClaims: JWTPayload): Promise<void> {
+  const claims = await introspect(token, verifiedClaims) as JWTPayload & { client_id?: unknown; username?: unknown; principal_kind?: unknown };
+  const client = verifiedClaims.azp;
+  if (!claims || claims.active !== true || typeof client !== 'string' || claims.sub !== verifiedClaims.sub ||
+      claims.client_id !== client || claims.username !== `service-account-${client}`.toLowerCase() ||
+      claims.principal_kind !== 'service' || claims.sid !== undefined || claims.session_state !== undefined) {
+    throw new AuthenticationError('Service principal token is inactive or does not match its client');
   }
 }
 
