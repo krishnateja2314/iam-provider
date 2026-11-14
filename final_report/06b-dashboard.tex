@@ -1,0 +1,96 @@
+\section{The dashboard in use}
+\label{sec:dashboard}
+
+This section shows the running system through its browser clients. All screenshots in Figures~\ref{fig:dash-signedout}--\ref{fig:mobile} were captured on 14 November 2026 from the final code (\texttt{e13f019}) with Microsoft Edge driven by Playwright, using the synthetic users only. The phone pictures in Figures~\ref{fig:phone}--\ref{fig:phone-setup} come from the physical-phone run of 7 November (Section~\ref{sec:results}). The dashboard has three panels: \textbf{01 Session} (sign-in, the user's organizations and roles, refresh and sign-out), \textbf{02 Request} (the \code{X-Organization-ID} selector, one button per API call, and a verdict box that shows the HTTP status and the reason), and \textbf{03 Decision log} (the last ten requests).
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.78\textwidth]{final_report/fig/web-signed-out.jpg}
+\caption{Web client before sign-in. The page never handles a password: both buttons redirect to Keycloak (directly, or through the enterprise broker).}
+\label{fig:dash-signedout}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.62\textwidth]{final_report/fig/web-keycloak-login.jpg}
+\caption{Keycloak's own login page for the \code{iam-platform} realm, reached with the authorization-code flow and an S256 PKCE challenge.}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\textwidth]{final_report/fig/web-acme-resources.jpg}
+\caption{Alice signed in. The Session panel lists her two memberships with different roles: admin in Acme, learner in Globex. With Acme selected, \code{GET /resources} is allowed (200) and the list is scoped to Acme.}
+\label{fig:dash-resources}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\textwidth]{final_report/fig/web-globex-members-403.jpg}
+\caption{The same user switches the tenant selector to Globex, where she is only a learner. \code{GET /members} is denied (403): her admin role in Acme does not carry over (invariant~3).}
+\label{fig:dash-403}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\textwidth]{final_report/fig/web-acme-audit.jpg}
+\caption{As Acme administrator, Alice reads the tenant's audit trail: each allow and deny is a queryable row with action, decision, time, reason and correlation ID.}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\textwidth]{final_report/fig/web-globex-delegation.jpg}
+\caption{AG02 from the dashboard. In Globex, \code{POST /delegations} creates a delegation (201) that lets \code{iam-agent-assistant} use \code{learning-resource:list} and \code{submission:list} for Alice for 15 minutes.}
+\label{fig:dash-delegation}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\textwidth]{final_report/fig/web-globex-delegations-list.jpg}
+\caption{\code{GET /delegations} lists the caller's own delegations in the selected tenant with their scopes, expiry and state (active, revoked or expired).}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\begin{minipage}[t]{0.40\textwidth}\centering
+\includegraphics[width=\textwidth]{final_report/fig/mobile-acme-submissions.jpg}\\[2pt]
+\small (a) submissions: 200
+\end{minipage}\hspace{0.06\textwidth}%
+\begin{minipage}[t]{0.40\textwidth}\centering
+\includegraphics[width=\textwidth]{final_report/fig/mobile-acme-members-403.jpg}\\[2pt]
+\small (b) members: 403
+\end{minipage}
+\caption{The mobile-style client (separate public PKCE client \code{iam-mobile}, 390-pixel viewport) signed in as Bob, an instructor in Acme. He may list submissions of the courses he teaches, but member administration is denied.}
+\label{fig:mobile}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\begin{minipage}[t]{0.29\textwidth}\centering
+\includegraphics[width=\textwidth]{final_report/fig/phone-acme-200.jpg}\\[2pt]
+\small (a) Alice, Acme resources: 200
+\end{minipage}\hfill
+\begin{minipage}[t]{0.29\textwidth}\centering
+\includegraphics[width=\textwidth]{final_report/fig/phone-globex-403.jpg}\\[2pt]
+\small (b) Alice, Globex members: 403
+\end{minipage}\hfill
+\begin{minipage}[t]{0.29\textwidth}\centering
+\includegraphics[width=\textwidth]{final_report/fig/phone-enterprise-403.jpg}\\[2pt]
+\small (c) enterprise user, Acme members: 403
+\end{minipage}
+\caption{Frames from the video of the physical-phone run (realme 11 Pro+, Android 15, Chrome 156, over the phone's hotspot, 7 November). In (c) the user signed in through the enterprise broker, and the decision log shows the allow and the deny.}
+\label{fig:phone}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\begin{minipage}[t]{0.30\textwidth}\centering
+\includegraphics[width=\textwidth]{final_report/fig/phone-chrome-flag.jpg}\\[2pt]
+\small (a) Chrome command line
+\end{minipage}\hspace{0.08\textwidth}%
+\begin{minipage}[t]{0.30\textwidth}\centering
+\includegraphics[width=\textwidth]{final_report/fig/phone-device.jpg}\\[2pt]
+\small (b) the test device
+\end{minipage}
+\caption{Phone setup. (a) \code{chrome://version} shows the ``treat insecure origin as secure'' flag for the lab address, needed because PKCE uses \code{crypto.subtle} (issue~31). (b) The device used for the run.}
+\label{fig:phone-setup}
+\end{figure}
