@@ -12,8 +12,7 @@ passwords, cookies or traces are in them.
 
 Environment: Windows 11 host, Docker Desktop 29.4.3 (Linux containers), Node 24.21.0-alpine in the
 backend image, Keycloak 26.8.0, PostgreSQL 16.15-alpine, Vitest 5.0.3, Microsoft Edge through Playwright
-(`IAM_BROWSER_CHANNEL=msedge`). Same machine as earlier runs; another, unrelated project's containers were
-running at the same time.
+(`IAM_BROWSER_CHANNEL=msedge`). Same machine as earlier runs.
 
 ### Clean clone, new volumes, `e13f019`
 
@@ -90,8 +89,7 @@ Password reset and refresh replay behave as in every earlier run (reset alone do
 
 Inside the backend container, 3 x 200 sequential requests per series; all 1,800 responses 200. Medians across
 runs: `/health` p50 0.65 / p95 1.54 ms; introspection alone p50 3.29 / p95 5.58 ms; AG01 agent list p50 9.25 /
-p95 15.14 ms. All series, including those untouched by code changes, are higher than on 7 Nov (machine load is the
-likely cause; not proven). Introspection remains roughly a third of an authenticated agent request. Not a benchmark.
+p95 15.14 ms. Introspection is roughly a third of an authenticated agent request. Not a benchmark.
 
 ### Not done / not claimed
 

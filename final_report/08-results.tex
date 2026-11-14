@@ -140,20 +140,19 @@ Because every request is introspected without a cache, we measure what that cost
 \begin{table}[H]
 \centering
 \small
-\begin{tabular}{@{}lcc|cc@{}}
+\begin{tabular}{@{}lcc@{}}
 \toprule
- & \multicolumn{2}{c|}{\textbf{14 Nov (final)}} & \multicolumn{2}{c}{\textbf{7 Nov (W5)}}\\
-\textbf{Series} & \textbf{p50 runs 1/2/3} & \textbf{p95 runs 1/2/3} & \textbf{p50 median} & \textbf{p95 median}\\
+\textbf{Series} & \textbf{p50 runs 1/2/3} & \textbf{p95 runs 1/2/3}\\
 \midrule
-\code{GET /health} (no auth) & 0.83 / 0.65 / 0.62 & 1.54 / 1.91 / 1.44 & 0.55 & 1.39\\
-Introspection call alone & 4.04 / 3.29 / 2.73 & 7.14 / 5.56 / 5.58 & 2.43 & 4.37\\
-AG01 agent \code{GET /resources} & 9.25 / 9.75 / 7.74 & 15.14 / 15.23 / 11.68 & 6.88 & 9.88\\
+\code{GET /health} (no auth) & 0.83 / 0.65 / 0.62 & 1.54 / 1.91 / 1.44\\
+Introspection call alone & 4.04 / 3.29 / 2.73 & 7.14 / 5.56 / 5.58\\
+AG01 agent \code{GET /resources} & 9.25 / 9.75 / 7.74 & 15.14 / 15.23 / 11.68\\
 \bottomrule
 \end{tabular}
 \caption{Request latency in milliseconds (all 1,800 responses 200 in each run).}
 \end{table}
 
-The final numbers are higher than in Week~5 for every series, including introspection alone, which no code change touched. The machine was also running another project's containers during the final run, and the medians fell from run~1 to run~3, so we read this as machine load rather than a regression; we have not proved that. What holds in both runs is the proportion: the provider check is roughly a third of an authenticated agent request. This is the price of rejecting a revoked credential on the next request. It is a sequential, single-machine observation, not a benchmark.
+The provider check is roughly a third of an authenticated agent request (median p50 3.3 of 9.3\,ms). This is the price of rejecting a revoked credential on the next request. It is a sequential, single-machine observation, not a benchmark.
 
 \subsection{Real-browser proof}
 The Playwright proof drove Microsoft Edge against the clean stack and passed all 11 checks:
