@@ -1,0 +1,268 @@
+{
+  "startedAt": "2026-11-14T15:15:22.368Z",
+  "commit": "e13f01903f7a53676dd7abd42b6269e0d8c495f6",
+  "dirty": false,
+  "baseline": {
+    "passed": 233,
+    "failed": 0,
+    "skipped": 20
+  },
+  "mutations": [
+    {
+      "id": "M1",
+      "guard": "Tenant membership check in tenantContextHook",
+      "file": "src/middleware.ts",
+      "expect": [
+        "accessing org where user has no membership returns 403"
+      ],
+      "verdict": "KILLED",
+      "failedTests": [
+        "API Integration: Tenant-Scoped Resources accessing org where user has no membership returns 403",
+        "HTTP adversarial resource/submission validation learner cannot select draft resources",
+        "HTTP adversarial resource/submission validation instructor list contains assigned submissions only",
+        "AG02 user-delegated agent through the API (signed fixtures, real PostgreSQL) when the delegator's membership is suspended, the agent is refused at the tenant gate (403)"
+      ],
+      "notFailed": [],
+      "passed": 229,
+      "failed": 4
+    },
+    {
+      "id": "M2",
+      "guard": "JWT signature verification",
+      "file": "src/modules/auth/token-validator.ts",
+      "expect": [
+        "rejects an invalid signature with the same trusted kid"
+      ],
+      "verdict": "KILLED",
+      "failedTests": [
+        "T03/T04/T09: production access token validation with real JOSE signatures rejects an invalid signature with the same trusted kid",
+        "T03/T04/T09: production access token validation with real JOSE signatures rejects expiration",
+        "T03/T04/T09: production access token validation with real JOSE signatures requires exp",
+        "T03/T04/T09: production access token validation with real JOSE signatures requires iss",
+        "T03/T04/T09: production access token validation with real JOSE signatures rejects mismatched claims {\"iss\":\"https://attacker.invalid/realms/iam-platform\"}",
+        "T03/T04/T09: production access token validation with real JOSE signatures rejects mismatched claims {\"aud\":\"iam-web\"}",
+        "T03/T04/T09: production access token validation with real JOSE signatures rejects malformed claims {\"exp\":\"9999999999\"}",
+        "T03/T04/T09: production access token validation with real JOSE signatures rejects malformed claims {\"iss\":123}",
+        "T03/T04/T09: production access token validation with real JOSE signatures rejects a signed non-RS256 algorithm"
+      ],
+      "notFailed": [],
+      "passed": 224,
+      "failed": 9
+    },
+    {
+      "id": "M3",
+      "guard": "Tenant filter on submission lookup in authorize()",
+      "file": "src/modules/authorization/authorization-engine.ts",
+      "expect": [
+        "a REAL Globex submission cannot be read or graded through the Acme selector"
+      ],
+      "verdict": "KILLED",
+      "failedTests": [
+        "HTTP adversarial resource/submission validation selector/resource substitution: a REAL Globex submission cannot be read or graded through the Acme selector"
+      ],
+      "notFailed": [],
+      "passed": 232,
+      "failed": 1
+    },
+    {
+      "id": "M4",
+      "guard": "Consent route admits suspended members for withdrawal",
+      "file": "src/routes.ts",
+      "expect": [
+        "withdrawal remains possible during suspension",
+        "permits only own withdrawal"
+      ],
+      "verdict": "KILLED",
+      "failedTests": [
+        "HTTP adversarial resource/submission validation consent grants bio only for its purpose and withdrawal remains possible during suspension",
+        "HTTP adversarial resource/submission validation suspension (membership AND organization) permits only own withdrawal; grants and foreign tenants denied; history and audit preserved",
+        "AG02 user-delegated agent through the API (signed fixtures, real PostgreSQL) a delegated agent cannot re-delegate or use human-only routes (403 PRINCIPAL_KIND_NOT_ALLOWED)",
+        "AG01 service principal through the API (signed fixtures, real PostgreSQL) human-only routes refuse service principals (403 PRINCIPAL_KIND_NOT_ALLOWED)"
+      ],
+      "notFailed": [],
+      "passed": 229,
+      "failed": 4
+    },
+    {
+      "id": "M5",
+      "guard": "Fatal security-config check before listen()",
+      "file": "src/server.ts",
+      "expect": [
+        "exits 1 before listening"
+      ],
+      "verdict": "KILLED",
+      "failedTests": [
+        "server entry point (subprocess) production with KEYCLOAK_INTROSPECTION=false exits 1 before listening"
+      ],
+      "notFailed": [],
+      "passed": 232,
+      "failed": 1
+    },
+    {
+      "id": "M6",
+      "guard": "Provider outage reported as dependency error (503), not bad credential",
+      "file": "src/modules/auth/session-service.ts",
+      "expect": [
+        "denies with exactly 503 DEPENDENCY_UNAVAILABLE"
+      ],
+      "verdict": "KILLED",
+      "failedTests": [
+        "API Integration: Authentication provider dependency contract introspection network failure / timeout denies with exactly 503 DEPENDENCY_UNAVAILABLE",
+        "API Integration: Authentication provider dependency contract introspection provider HTTP 500 denies with exactly 503 DEPENDENCY_UNAVAILABLE",
+        "API Integration: Authentication provider dependency contract introspection provider HTTP 503 denies with exactly 503 DEPENDENCY_UNAVAILABLE",
+        "AG01 provider introspection binding for service tokens a provider outage is a dependency failure (503), not an invalid credential",
+        "Uncached fail-closed provider session authentication introspection timeout is a dependency failure (DependencyError -> 503), not an invalid credential",
+        "Uncached fail-closed provider session authentication rejects access when introspection fetch returns 500 error"
+      ],
+      "notFailed": [],
+      "passed": 227,
+      "failed": 6
+    },
+    {
+      "id": "M7",
+      "guard": "Casbin explicit-deny precedence",
+      "file": "src/modules/authorization/authorization-engine.ts",
+      "expect": [
+        "explicit deny overrides an admin allow",
+        "explicit deny on one role wins over an allow on another role"
+      ],
+      "verdict": "KILLED",
+      "failedTests": [
+        "AG02 user-delegated agent through the API (signed fixtures, real PostgreSQL) a tenant deny policy stops users creating delegations, but never stops them revoking one",
+        "T05-T08: hard tenant and relationship boundaries explicit deny overrides an admin allow and policy changes take effect next decision",
+        "T05-T08: hard tenant and relationship boundaries explicit deny on one role wins over an allow on another role"
+      ],
+      "notFailed": [],
+      "passed": 230,
+      "failed": 3
+    },
+    {
+      "id": "M8",
+      "guard": "Service principal registry: disabled principal refused",
+      "file": "src/modules/service-principal/service-principal-service.ts",
+      "expect": [
+        "unregistered and disabled service principals are rejected with 401"
+      ],
+      "verdict": "KILLED",
+      "failedTests": [
+        "AG01 service principal through the API (signed fixtures, real PostgreSQL) unregistered and disabled service principals are rejected with 401"
+      ],
+      "notFailed": [],
+      "passed": 232,
+      "failed": 1
+    },
+    {
+      "id": "M9",
+      "guard": "Service token bound to its client service account at introspection",
+      "file": "src/modules/auth/session-service.ts",
+      "expect": [
+        "rejects a human user token relabelled as a service token"
+      ],
+      "verdict": "KILLED",
+      "failedTests": [
+        "AG01 provider introspection binding for service tokens rejects a human user token relabelled as a service token"
+      ],
+      "notFailed": [],
+      "passed": 232,
+      "failed": 1
+    },
+    {
+      "id": "M10",
+      "guard": "Human-only routes refuse service principals",
+      "file": "src/middleware.ts",
+      "expect": [
+        "human-only routes refuse service principals"
+      ],
+      "verdict": "KILLED",
+      "failedTests": [
+        "AG02 user-delegated agent through the API (signed fixtures, real PostgreSQL) a delegated agent cannot re-delegate or use human-only routes (403 PRINCIPAL_KIND_NOT_ALLOWED)",
+        "AG01 service principal through the API (signed fixtures, real PostgreSQL) human-only routes refuse service principals (403 PRINCIPAL_KIND_NOT_ALLOWED)",
+        "AG01 service principal through the API (signed fixtures, real PostgreSQL) audit rows record actor_type=service with the service principal as actor and its client"
+      ],
+      "notFailed": [],
+      "passed": 230,
+      "failed": 3
+    },
+    {
+      "id": "M11",
+      "guard": "Service grant matches the exact action",
+      "file": "src/modules/service-principal/service-principal-service.ts",
+      "expect": [
+        "cannot perform admin or other ungranted actions in Acme"
+      ],
+      "verdict": "KILLED",
+      "failedTests": [
+        "AG01 service principal through the API (signed fixtures, real PostgreSQL) cannot perform admin or other ungranted actions in Acme (403)"
+      ],
+      "notFailed": [],
+      "passed": 232,
+      "failed": 1
+    },
+    {
+      "id": "M12",
+      "guard": "Delegated agent needs the exact delegated scope",
+      "file": "src/modules/delegation/delegation-service.ts",
+      "expect": [
+        "a permission the user holds but did not delegate is denied"
+      ],
+      "verdict": "KILLED",
+      "failedTests": [
+        "AG02 user-delegated agent through the API (signed fixtures, real PostgreSQL) a permission the user holds but did not delegate is denied: single-resource read without learning-resource:read (403)",
+        "AG02 user-delegated agent through the API (signed fixtures, real PostgreSQL) an admin's agent still cannot reach admin routes: members, audit, policy and resource creation (403)"
+      ],
+      "notFailed": [],
+      "passed": 231,
+      "failed": 2
+    },
+    {
+      "id": "M13",
+      "guard": "Delegated agent is also limited by the delegator's own permission (intersection)",
+      "file": "src/modules/authorization/authorization-engine.ts",
+      "expect": [
+        "a delegated scope the user does not hold grants nothing",
+        "the teaching relationship still applies"
+      ],
+      "verdict": "KILLED",
+      "failedTests": [
+        "AG02 user-delegated agent through the API (signed fixtures, real PostgreSQL) a delegated scope the user does not hold grants nothing: learner + submission:grade cannot grade (403)",
+        "AG02 user-delegated agent through the API (signed fixtures, real PostgreSQL) the teaching relationship still applies: an instructor's agent grades a taught course (200) but not an untaught one (403)",
+        "AG02 user-delegated agent through the API (signed fixtures, real PostgreSQL) when the delegator loses the role, the agent loses it on the next request (403), and regains nothing extra after"
+      ],
+      "notFailed": [],
+      "passed": 230,
+      "failed": 3
+    },
+    {
+      "id": "M14",
+      "guard": "Revoked delegation refused",
+      "file": "src/modules/delegation/delegation-service.ts",
+      "expect": [
+        "revocation applies on the agent"
+      ],
+      "verdict": "KILLED",
+      "failedTests": [
+        "AG02 user-delegated agent through the API (signed fixtures, real PostgreSQL) revocation applies on the agent's next request (401); a second revoke and another user's revoke are 404"
+      ],
+      "notFailed": [],
+      "passed": 232,
+      "failed": 1
+    },
+    {
+      "id": "M15",
+      "guard": "Only delegable agents can receive a delegation",
+      "file": "src/modules/delegation/delegation-service.ts",
+      "expect": [
+        "a non-delegable agent can neither use nor receive one"
+      ],
+      "verdict": "KILLED",
+      "failedTests": [
+        "AG02 user-delegated agent through the API (signed fixtures, real PostgreSQL) only the named agent can use a delegation; a non-delegable agent can neither use nor receive one"
+      ],
+      "notFailed": [],
+      "passed": 232,
+      "failed": 1
+    }
+  ],
+  "finishedAt": "2026-11-14T15:17:32.575Z",
+  "exitCode": 0
+}

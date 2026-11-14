@@ -1,0 +1,8 @@
+== control: stop the database container only 2026-11-14T15:17:32Z
+iam-finalclean-postgres-1
+Commit e13f01903f7a53676dd7abd42b6269e0d8c495f6
+Container source matches checkout.
+Baseline (no mutation)...
+INCONCLUSIVE baseline: Vitest produced no JSON report (exit 143). 
+exit 2
+iam-finalclean-postgres-1

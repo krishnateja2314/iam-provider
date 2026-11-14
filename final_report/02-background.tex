@@ -1,0 +1,46 @@
+\section{Background and related work}
+\label{sec:background}
+
+\subsection{Identity providers}
+Mature identity providers already exist. Commercial products (Okta, Microsoft Entra ID, Auth0, Ping Identity, Google Cloud Identity, AWS Cognito) and open-source ones (Keycloak, Ory, Zitadel, Authentik) all implement OpenID Connect and OAuth~2.0 well: credential storage, login pages, multi-factor authentication, token signing, session management and federation with other providers. What they mostly do \emph{not} do is the application-side work that comes after login. They treat authorization as coarse roles and groups attached to a user, and leave tenant-aware, resource-specific decisions (``may this instructor grade this submission in this organization?'') to each customer's application. Our contribution is therefore not a new login server but a small, testable reference implementation of that application-side layer.
+
+\subsection{Protocols we rely on}
+\paragraph{OpenID Connect and OAuth 2.0.} A browser client starts the \emph{authorization-code flow}: it redirects the user to the provider, the user signs in there, and the provider redirects back with a short-lived code. The client exchanges the code for an \emph{ID token} (for the client: who signed in), an \emph{access token} (for the API: what the caller may present) and a \emph{refresh token} (to get new access tokens). Tokens are JSON Web Tokens signed with the provider's RS256 key, whose public half is published as a JWKS.
+
+\paragraph{PKCE.} A public client (a browser page or a mobile app) cannot keep a secret. PKCE (Proof Key for Code Exchange) protects the code exchange: the client creates a random \emph{verifier}, sends its SHA-256 hash (the \emph{challenge}) with the login request, and must present the verifier when exchanging the code. An attacker who steals the code cannot use it without the verifier. RFC~9700 requires PKCE with the \code{S256} method for public clients.
+
+\paragraph{Token introspection.} A signed access token is valid until it expires, even if the user logged out a second after it was issued. \emph{Introspection} asks the provider ``is this token still active?'' on each request. We introspect every request without a cache, which is what makes logout and revocation take effect on the very next request (Section~\ref{sec:design-decisions}).
+
+\paragraph{Refresh-token rotation and reuse detection.} Each refresh returns a new refresh token and invalidates the old one. If an old refresh token is ever presented again, someone has copied it, and the whole chain of tokens descended from it should be revoked.
+
+\paragraph{Client credentials.} A program with its own secret can obtain an access token for itself without any user. We use this grant for both agents.
+
+\paragraph{Token exchange (RFC 8693).} The standard way for one party to obtain a token that acts for another, with an \code{act} (actor) claim. We considered it for AG02 and explain in Section~\ref{sec:ag02-design} why we chose a delegation record instead.
+
+\subsection{Authorization models}
+Authorization approaches are fragmented. \textbf{RBAC} (role-based) is built into most frameworks: permissions attach to roles, roles to users. \textbf{ABAC} (attribute-based) decides from attributes of the subject, resource and context (for example ``resource status is published''); it is expressed in standards like XACML or in policy-as-code engines like OPA. \textbf{ReBAC} (relationship-based) decides from relationships between objects (``Bob teaches Course~1''); it comes from Google's Zanzibar and is implemented by SpiceDB and OpenFGA. Real systems need all three. Milestone M4 asks for exactly that mix, and our authorization engine combines them in one decision path (Section~\ref{sec:authz}).
+
+\subsection{Reference works}
+The brief named five references. Each one shaped a concrete design decision.
+
+\begin{table}[H]
+\centering
+\begin{tabularx}{\textwidth}{@{}P{3.8cm} L P{2.1cm}@{}}
+\toprule
+\textbf{Reference} & \textbf{What we took from it} & \textbf{Milestones}\\
+\midrule
+OpenID Connect Core 1.0 \cite{oidc} & Authorization-code flow; ID token for the client, access token for the API; nonce and state checks; the client validates the ID token & M2, M3\\
+OAuth 2.0 Security BCP, RFC 9700 \cite{bcp} & PKCE (S256) for public clients; no implicit or password grants in normal use; refresh-token rotation and reuse detection; audience-restricted tokens & M3, M7\\
+Zanzibar, USENIX ATC 2019 \cite{zanzibar} & ``Instructor teaches course'' as a relationship fact, read at decision time and never cached in a token, at small scale & M4\\
+SCIM, RFC 7644 \cite{scim} & Idempotent, transactional organization provisioning as the minimal enterprise slice; full SCIM left as future work & M5\\
+NIST Privacy Framework \cite{nist} & Purpose-specific consent, data minimization through field allowlists, queryable audit trail & M6\\
+\bottomrule
+\end{tabularx}
+\caption{Reference works and how they shaped the design.}
+\end{table}
+
+\subsection{Agentic access}
+Allowing programs to act for users is a very recent concern. Early efforts include Anthropic's Model Context Protocol, which describes how agents connect to tools, and OAuth-based proposals for agent identity and delegated authority. There is no settled standard for how an application should limit what an agent may do on a user's behalf. Our Week~1 design fixed one rule that we treat as a security invariant: \emph{an agent cannot have more effective permission than its delegating user} \cite{week1}. AG02 implements and tests that rule.
+
+\subsection{The gap we target}
+Few small, open examples separate authentication from tenant authorization end to end, combine role, attribute and relationship rules in one decision path, treat programs as first-class principals with their own limits, and back every security claim with a test that is itself shown to be able to fail. That is the gap this project fills, at the scale of a course project.

@@ -2,12 +2,12 @@
 
 ## Actual Evidence
 
-Current complete execution, revision **`fde2efd`**, from a **clean clone with new volumes**,
-**2026-11-07T05:49:38Z**: **227 passed, 0 failed, 0 skipped, 10 files** (including 16 live-provider
+Current complete execution, revision **`e13f019`** (final), from a **clean clone with new volumes**,
+**2026-11-14T15:14:54Z**: **253 passed, 0 failed, 0 skipped, 11 files** (including 20 live-provider
 cases). Stack: Node 24.21.0, PostgreSQL 16.15, Keycloak 26.8.0, Vitest 5.0.3. Typecheck (source and
-tests) and build passed. Mutation check: 11 of 11 killed. Browser proof: 10 of 10 PASS. npm audit:
-**0 vulnerabilities** (the 4 W4 advisories and a new `vite` advisory are fixed).
-Previous: `42d8a43`, 2026-10-31, 197 passed.
+tests) and build passed. Mutation check: 15 of 15 killed. Browser proof: 11 of 11 PASS on two hosts.
+npm audit: **0 vulnerabilities**.
+Previous: `fde2efd`, 2026-11-07, 227 passed; `42d8a43`, 2026-10-31, 197 passed.
 [Execution evidence](verification-evidence.md) has the commands, raw logs, the pre-fix
 baseline (`953a0aa`: 160 pass, 1 fail, 6 skip) and the historical 2 Oct record (159 pass on `0d232ec`).
 
@@ -64,14 +64,16 @@ not mean passed. Paths below are relative to `backend/`, unless otherwise specif
 
 | Check | Actual result |
 |---|---|
-| Complete suite incl. live, clean clone `fde2efd` | 227 PASS /0 FAIL /0 SKIP, 2026-11-07T05:49:38Z |
+| Complete suite incl. live, clean clone `e13f019` (final) | 253 PASS /0 FAIL /0 SKIP, 2026-11-14T15:14:54Z |
+| AG02 delegated agent (`delegation.test.ts`) | 26 PASS (4 live): intersection with user permission, tenant binding, non-delegable admin scopes, revocation 401 on next request, `actor_type=service` audit with delegator as subject |
+| Previous complete suite, clean clone `fde2efd` | 227 PASS /0 FAIL /0 SKIP, 2026-11-07T05:49:38Z |
 | AG01 service principal (`service-principal.test.ts`) | 30 PASS (7 live): Acme list 200, Globex 403, admin 403, expired 401, disabled client 401 (first request), `actor_type='service'` audit |
 | Previous complete suite, clean clone `42d8a43` | 197 PASS /0 FAIL /0 SKIP, 2026-10-31T09:18:36Z |
 | Pre-fix baseline `953a0aa` (DB, no live) | 160 PASS /1 FAIL /6 SKIP (suspended consent withdrawal) |
-| Mutation independence (11 guards) | 11 killed /0 survived /0 inconclusive; DB-down run INCONCLUSIVE exit 2 |
-| Real Edge browser PKCE/broker/tenant/session proof | 10/10 PASS on clean stack; 10/10 PASS on alternate origin `127.0.0.1` |
+| Mutation independence (15 guards) | 15 killed /0 survived /0 inconclusive at `e13f019`; DB-down run INCONCLUSIVE exit 2 |
+| Real Edge browser PKCE/broker/tenant/session/delegation proof | 11/11 PASS on clean stack; 11/11 PASS on alternate origin `127.0.0.1` (`e13f019`) |
 | Typecheck (source + tests) and Docker production build | PASS |
-| npm dependency audit | **0 vulnerabilities** at `fde2efd` (W4: 4 advisories; fixed in W5) |
+| npm dependency audit | **0 vulnerabilities** at `e13f019` and `fde2efd` (W4: 4 advisories; fixed in W5) |
 | Existing-token revocation local observations | First request401; 62/52/31/158ms, max158ms over4samples |
 | Consent/profile HTTP | PASS: grant/bio projection; withdrawal under org and membership suspension; grant and foreign tenant denied |
 | Historical (2 Oct, `0d232ec`) | 159 PASS /0 /0. Not evidence for later revisions |

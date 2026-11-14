@@ -1,0 +1,29 @@
+== alternate host 127.0.0.1 2026-11-14T15:23:00Z
+ Container iam-finalclean-keycloak-db-1 Healthy 
+ Container iam-finalclean-postgres-1 Healthy 
+ Container iam-finalclean-backend-1 Healthy 
+Configured iam-enterprise; existing realm data preserved
+Configured iam-platform; existing realm data preserved
+Local password-grant test client disabled
+Browser proof against issuer http://127.0.0.1:8180/realms/iam-platform, API http://127.0.0.1:3100, clients http://127.0.0.1:5173
+PASS: bounded provider service account cannot administer realm settings
+PASS: wrong PKCE verifier rejected by provider
+PASS: web local login, S256 PKCE, signed audience/type/role/subject checks
+PASS: browser tenant selector, same-user admin/learner boundary, published lists, member403, cross-tenant404 and tenant-scoped allow/deny audit
+PASS: AG02 delegation created in the browser; agent 200 in scope, 403 on members and in the other tenant, 401 after revocation
+PASS: mobile local login, S256 PKCE, signed audience/type/role/subject checks
+PASS: web enterprise OIDC broker login, S256 PKCE, signed audience/type/role/subject checks
+PASS: mobile enterprise OIDC broker login, S256 PKCE, signed audience/type/role/subject checks
+PASS: own-session listing excludes another user; deleting that real foreign session is denied
+PASS: refresh rotation and old refresh token reuse rejection
+PASS: individual session revoke immediately rejects existing access/refresh tokens; other device remains active
+PKCE browser verification complete. No tokens, traces or browser storage were exported.
+exit 0
+== AG02 demo under issuer 127.0.0.1 (delegation for Charlie in Acme)
+403  GET /resources   without delegation (agent has no authority of its own) TENANT_ACCESS_DENIED
+200  GET /resources   with delegation (3 rows)
+200  GET /submissions with delegation (only the delegator's own) (2 rows)
+403  GET /members     with delegation (admin action, never delegable) AUTHORIZATION_DENIED
+403  GET /resources   with delegation in another tenant TENANT_ACCESS_DENIED
+Revoke the delegation in the web client (or DELETE /api/v1/delegations/<id>) and rerun: the delegated calls become 401.
+exit 0

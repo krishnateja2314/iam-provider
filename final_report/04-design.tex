@@ -1,0 +1,198 @@
+\section{Requirements and design}
+\label{sec:design}
+
+\subsection{Scope boundary}
+Our approach is \emph{reuse first}. Keycloak (the identity provider) owns everything that is standard and security-critical about \emph{proving who someone is}: password storage and hashing, login pages, brute-force protection, RS256 token signing, session state, refresh rotation and federation with an upstream enterprise provider. Our backend owns everything specific to the application: mapping external identities to global users, tenant memberships and roles, resource ownership, teaching relationships, authorization decisions, provisioning, consent, profile field filtering, audit, and the two kinds of agents.
+
+\subsection{Threat model}
+\paragraph{Assets.} Tenant data (courses, submissions, grades), memberships and roles, profile fields such as \code{bio}, consent records, the audit trail, and the credentials and sessions that give access to them.
+
+\paragraph{Actors we defend against.} Following the Week~1 design \cite{week1}:
+\begin{enumerate}
+  \item an unauthenticated attacker;
+  \item a malicious tenant, or a member of one tenant probing another;
+  \item a compromised user account;
+  \item a revoked or suspended user;
+  \item an attacker holding a stolen access or refresh token;
+  \item a malicious or over-privileged agent;
+  \item a client sending malformed identity claims.
+\end{enumerate}
+
+\paragraph{Trust assumptions.} The identity provider, the database and the backend host are trusted. The network between browser and services is the local lab (plain HTTP; see Limitations). Everything the client sends (headers, IDs, body fields, token claims before verification) is untrusted.
+
+\subsection{Security invariants}
+The Week~1 design fixed ten invariants and promised to turn them into tests. Table~\ref{tab:invariants} shows where each one is enforced and tested in the final revision. Invariant~7 was the last one without an implementation until this week.
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabularx}{\textwidth}{@{}P{0.4cm} P{5.0cm} L@{}}
+\toprule
+\textbf{\#} & \textbf{Invariant} & \textbf{Where enforced; where tested (final revision)}\\
+\midrule
+1 & No access to another organization's resources without an explicit relationship & Tenant hook + every query filtered by \code{organization\_id}; \code{api.test.ts} (real foreign submission, third tenant), mutations M1, M3\\
+2 & A request parameter cannot override the trusted tenant context & \code{X-Organization-ID} treated as untrusted input and checked against memberships; substitution tests return 404\\
+3 & A role in one organization does not apply in another & Roles are rows scoped to an organization and read per request; Alice admin in Acme, learner in Globex: browser proof, phone run, authorization tests\\
+4 & No tenant access without an active membership & \code{tenantContextHook}; suspended membership and suspended organization tests; M1\\
+5 & A revoked session cannot obtain new tokens through refresh & Keycloak session revocation + uncached introspection; live lifecycle tests\\
+6 & Reuse of a consumed refresh token is detected & \code{revokeRefreshToken=true}, \code{refreshTokenMaxReuse=0}; live replay test kills the token family\\
+7 & An agent cannot have more effective permission than its delegating user & \textbf{AG02 (final week)}: delegation scope $\cap$ user permission $\cap$ tenant; \code{delegation.test.ts}; mutations M12--M15\\
+8 & Authorization fails closed when permission cannot be established & Engine returns deny on any error (503); provider outage 503; startup refuses unsafe configuration; M5, M6\\
+9 & Security-sensitive operations generate audit events & Audit insert in the same transaction as the change; rollback test when audit fails\\
+10 & Profile responses expose only fields the caller may receive & Allowlisted projection; \code{bio} only with purpose-specific consent\\
+\bottomrule
+\end{tabularx}
+\caption{The ten security invariants from Week~1 and their final status.}
+\label{tab:invariants}
+\end{table}
+
+\subsection{Main design decisions}
+\label{sec:design-decisions}
+
+\paragraph{D1. Modular monolith instead of microservices.}
+We kept the eight logical modules from Week~0 but run them in one Fastify process that shares one PostgreSQL database. This removes network hops and distributed transactions, and gives us one ACID transaction for ``mutation plus audit event''. Module boundaries are kept in the folder structure, so a module can later be extracted into a service.
+
+\begin{table}[H]
+\centering
+\begin{tabular}{@{}lccc@{}}
+\toprule
+\textbf{Criterion} & \textbf{Microservices} & \textbf{\shortstack{Traditional\\monolith}} & \textbf{\shortstack{Modular monolith\\(chosen)}}\\
+\midrule
+Development effort & High & Low & Medium\\
+Module separation & Strong & Weak & Strong\\
+Deployment effort & High & Low & Low\\
+Atomic mutation + audit & Hard (distributed) & Easy & Easy\\
+Eight-week risk & High & Low & Low to medium\\
+Future extraction into services & Natural & Hard & Natural\\
+\bottomrule
+\end{tabular}
+\caption{Architecture options considered after the Week~0 review.}
+\end{table}
+
+\paragraph{D2. Keycloak for authentication, not our own OIDC server.}
+Keycloak 26.8.0 handles credentials, login pages, brute-force protection, token signing, refresh rotation, session management and brokering to an upstream enterprise realm. Our clients never see a password. We chose Keycloak over the alternatives because it is open source, runs in one container, imports realms from JSON (so the whole provider configuration is in the repository), and supports both the authorization-code flow with PKCE and client credentials \cite{keycloak}.
+
+\paragraph{D3. Casbin for policy, with facts in our database.}
+We evaluated Keycloak's built-in authorization services and found them awkward for tenant-specific and relationship rules. Putting tenant roles into token claims would also leave them stale until expiry (shortcut~2). Instead, memberships, roles, teaching assignments and tenant policy rows live in PostgreSQL and are read fresh for every decision. Casbin 5.51.1 \cite{casbin} evaluates them with a deny-overrides effect:
+\[
+\textit{allowed} \;=\; \big(\exists\ \text{matching allow}\big) \;\wedge\; \neg\big(\exists\ \text{matching deny}\big).
+\]
+
+\paragraph{D4. Identity keyed by issuer and subject, never by email.}
+Many applications merge accounts when emails match. That enables account takeover through recycled, changed or unverified email addresses. We key each external identity by \code{(issuer, subject)}, link it to one global user, and never merge on email (shortcut~3).
+
+\paragraph{D5. Uncached introspection on every request.}
+A signed token alone cannot tell us that the user logged out. Every request is therefore checked with the provider, without a cache, so logout and revocation apply on the next request (shortcut~4). The cost is measured in Section~\ref{sec:latency}. If the provider cannot answer, the request is refused with 503; it is never allowed by default.
+
+\paragraph{D6. Programs are not users.}
+An agent calls the API with its own client-credentials token. Treating it as a user would create a fake account with a membership whose roles could later widen what the agent can do. Instead, agents are a separate kind of principal with their own registry. AG01 agents hold an explicit list of \code{(tenant, resource, action)} grants; AG02 agents hold nothing of their own and borrow a narrow slice of one user's authority through a delegation (Section~\ref{sec:agents}).
+
+\paragraph{D7. Shared database with tenant IDs.}
+For tenant isolation we compared a shared database with a tenant column, a schema per tenant and a database per tenant. We chose the shared database: it is the simplest to provision and migrate, and it lets the database enforce cross-tenant integrity with composite foreign keys and triggers. The price is that every query must filter on \code{organization\_id}; we enforce that by code review, by tests that use real foreign IDs, and by mutation M3.
+
+\paragraph{D8. Audit in the same transaction.}
+Every security-sensitive mutation writes its audit event inside the same PostgreSQL transaction. If the audit insert fails, the mutation rolls back (shortcut~5). Remote side effects at the provider (session revocation) cannot join a database transaction, so they are logged as a separate ``request'' event before and a ``complete'' event after.
+
+\subsection{Architecture}
+Docker Compose runs five containers: the web/mobile client server, Keycloak, Keycloak's private database, the Fastify backend and the application database. Neither database exposes a host port. Figure~\ref{fig:arch} shows the components and the protected request path.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+  font=\small,
+  box/.style={draw, rounded corners=3pt, align=center, minimum height=1.0cm, inner sep=5pt, fill=white},
+  stage/.style={draw, rounded corners=2pt, align=center, minimum width=2.45cm, minimum height=0.95cm, fill=orange!8},
+  db/.style={draw, rounded corners=3pt, align=center, minimum height=1.0cm, inner sep=5pt, fill=blue!6},
+  arr/.style={-{Stealth[length=2.2mm]}, thick},
+  node distance=0.55cm and 0.45cm]
+\node[box] (client) {Web / mobile client\\\footnotesize PKCE, tokens in memory};
+\node[box, below=0.35cm of client] (agent) {Agents (AG01, AG02)\\\footnotesize client credentials};
+\node[box, right=2.6cm of client] (kc) {Keycloak 26.8.0\\\footnotesize login, tokens, sessions};
+\node[db, right=0.6cm of kc] (kcdb) {Keycloak DB};
+\node[stage, below=1.9cm of agent, xshift=-0.3cm] (s1) {1. Verify token\\\footnotesize + introspection};
+\node[stage, right=of s1] (s2) {2. Tenant context\\\footnotesize membership/grant};
+\node[stage, right=of s2] (s3) {3. Hard boundaries\\\footnotesize delegation, owner, teaches};
+\node[stage, right=of s3] (s4) {4. Casbin\\\footnotesize deny-overrides};
+\begin{scope}[on background layer]
+\node[draw, dashed, rounded corners=4pt, fit=(s1)(s4), inner sep=8pt, label={[font=\footnotesize]above right:Fastify backend (modular monolith)}] (api) {};
+\end{scope}
+\node[db, below=1.1cm of s3] (appdb) {Application DB (PostgreSQL 16)\\\footnotesize tenant-scoped queries, audit in same transaction};
+\draw[arr] (client) -- node[above, font=\footnotesize]{login (PKCE)} (kc);
+\draw[arr] (agent.east) -- node[below, font=\footnotesize, pos=0.6]{token} (kc.south west);
+\draw[arr] (kc) -- (kcdb);
+\draw[arr] (agent.south) -- node[left, font=\footnotesize, align=right]{Bearer token +\\X-Organization-ID\\(+ X-Delegation-ID)} (s1.north);
+\draw[arr] (s1) -- (s2); \draw[arr] (s2) -- (s3); \draw[arr] (s3) -- (s4);
+\draw[arr, dashed] (s1.north east) to[bend left=12] node[right, font=\footnotesize, pos=0.35]{introspect} (kc.south);
+\draw[arr] (s4.south) |- (appdb.east);
+\end{tikzpicture}
+\caption{System architecture and the protected request pipeline. Browser clients and agents send the same headers. Failing any stage stops the request with 400, 401, 403, 404 or 503, and nothing reaches the database without an organization filter.}
+\label{fig:arch}
+\end{figure}
+
+\subsection{Session and token policy}
+\begin{table}[H]
+\centering
+\small
+\begin{tabularx}{\textwidth}{@{}P{5.2cm} L@{}}
+\toprule
+\textbf{Setting (platform realm)} & \textbf{Value and reason}\\
+\midrule
+Access-token lifespan & 300 s for users; 60 s for the agent clients. Short-lived, and checked by introspection anyway\\
+SSO session idle / maximum & 1800 s / 36000 s\\
+Refresh rotation & \code{revokeRefreshToken=true}, \code{refreshTokenMaxReuse=0}: every refresh rotates; any reuse revokes the family\\
+PKCE & Required, method \code{S256}, on \code{iam-web} and \code{iam-mobile} (public clients)\\
+Brute-force protection & Enabled\\
+Agent clients & Confidential, client-credentials only, no refresh token, no realm roles (\code{fullScopeAllowed=false}), hard-coded claim \code{principal\_kind=service}\\
+Password grant & Only on the disabled \code{iam-test} client, enabled explicitly for live tests and disabled again afterwards\\
+\bottomrule
+\end{tabularx}
+\caption{Session and token policy (from \code{infrastructure/keycloak/iam-platform-realm.json}).}
+\end{table}
+
+\subsection{Data model}
+The application database has 18 tables, created by five migrations. Figure~\ref{fig:er} shows the main relationships.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[font=\footnotesize,
+  ent/.style={draw, rounded corners=2pt, align=center, fill=gray!8, minimum width=2.3cm, minimum height=0.75cm},
+  rel/.style={-{Stealth[length=1.8mm]}}]
+\node[ent] (ids) at (-6.0,0) {authentication\_identities\\(issuer, subject) unique};
+\node[ent] (users) at (-2.2,0) {users};
+\node[ent] (mem) at (1.8,0) {memberships\\(user, org) unique};
+\node[ent] (orgs) at (5.8,0) {organizations};
+\node[ent] (profiles) at (-2.2,1.5) {profiles, consents};
+\node[ent] (subs) at (1.8,1.5) {submissions,\\teaching\_assignments};
+\node[ent] (res) at (5.8,1.5) {learning\_resources};
+\node[ent] (deleg) at (-2.2,-1.5) {agent\_delegations\\FK (user, org) $\to$ membership};
+\node[ent] (mroles) at (1.8,-1.5) {membership\_roles};
+\node[ent] (roles) at (5.8,-1.5) {roles (per org)};
+\node[ent] (sp) at (-2.2,-3.0) {service\_principals\\(issuer, client\_id)};
+\node[ent] (grants) at (1.8,-3.0) {service\_principal\_grants\\(tenant, resource, action)};
+\node[ent] (other) at (5.8,-3.0) {policy\_rules, audit\_events,\\provisioning\_requests,\\organization\_sso\_configs};
+\draw[rel] (ids) -- (users);
+\draw[rel] (profiles) -- (users);
+\draw[rel] (mem) -- (users);
+\draw[rel] (mem) -- (orgs);
+\draw[rel] (mroles) -- (mem);
+\draw[rel] (mroles) -- (roles);
+\draw[rel] (roles) -- (orgs);
+\draw[rel] (res) -- (orgs);
+\draw[rel] (subs) -- (res);
+\draw[rel] (deleg) -- (mem);
+\draw[rel] (deleg) -- (sp);
+\draw[rel] (grants) -- (sp);
+\draw[rel] (other.east) -- ++(0.35,0) |- (orgs.east);
+\end{tikzpicture}
+\caption{Main entities and relationships (arrows point to the referenced table).}
+\label{fig:er}
+\end{figure}
+
+Integrity rules enforced by the database itself, so that a bug in application code cannot break them:
+\begin{itemize}
+  \item \code{(issuer, subject)} is unique; \code{(user\_id, organization\_id)} is unique in memberships.
+  \item Triggers reject a role assignment or teaching assignment that links rows from different organizations; composite foreign keys tie submissions to courses of the same organization.
+  \item Quota triggers lock the organization row before counting members or resources, so two concurrent requests cannot both take the last slot.
+  \item Consent rows are append-only (a trigger rejects updates and deletes), so the consent history cannot be rewritten.
+  \item A delegation's composite foreign key to \code{memberships(user\_id, organization\_id)} makes a delegation in a tenant the user does not belong to impossible, and deleting a membership deletes its delegations.
+\end{itemize}

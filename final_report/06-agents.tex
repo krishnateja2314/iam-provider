@@ -1,0 +1,164 @@
+\section{Agents as principals: AG01 and AG02}
+\label{sec:agents}
+
+Both agent extensions start from the same rule (decision D6): \emph{a program is not a user}. It authenticates as itself with the OAuth client-credentials grant, it never gets a user row, an identity row, a membership or a role, and its audit rows say \code{actor\_type='service'}. The two extensions differ in where the agent's authority comes from.
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabularx}{\textwidth}{@{}P{3.2cm} L L@{}}
+\toprule
+ & \textbf{AG01: service principal} & \textbf{AG02: user-delegated agent}\\
+\midrule
+Keycloak client & \code{iam-agent-reporting} & \code{iam-agent-assistant}\\
+Acts as & itself & a user who delegated to it\\
+Authority & explicit grants \code{(tenant, resource, action)} & delegated scopes $\cap$ that user's current permission $\cap$ one tenant\\
+Without its source of authority & 403 in every tenant without a grant & 403 everywhere (it holds no grants)\\
+Switched off by & registry status, or disabling the client & revoking the delegation, expiry, the user losing a role or membership, or disabling the agent\\
+Built & Week~5 (\texttt{fde2efd}), ADR-003 & Final week (\texttt{e13f019}), ADR-004\\
+\bottomrule
+\end{tabularx}
+\caption{The two agent extensions side by side.}
+\end{table}
+
+\subsection{AG01: the reporting agent as a service principal}
+\label{sec:ag01}
+The Week~4 report committed in advance to one executable agent outcome with fixed expected results. The design is in ADR-003 \cite{adr3}.
+
+\begin{itemize}
+  \item \textbf{Provider client.} \code{iam-agent-reporting} is a confidential client that may use only client credentials. Its tokens carry audience \code{iam-backend}, no realm roles, no user session and a provider-stamped \code{principal\_kind=service}. They live 60 seconds and there is no refresh token.
+  \item \textbf{Validation.} The service-token checks of Section~\ref{sec:impl} apply; introspection must bind the token to the client's own service-account user.
+  \item \textbf{Registry and grants.} Migration 004 adds \code{service\_principals} (keyed by issuer and client ID, with a status) and \code{service\_principal\_grants}. An unregistered or disabled principal gets 401. Authorization requires an exact grant; Casbin role policies are never consulted. The seed grants exactly one action: list learning resources in Acme.
+  \item \textbf{Routes.} Tenant routes accept agents and still send every allow through \code{permit()}. Identity, session, consent and platform routes refuse agents with 403.
+\end{itemize}
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabularx}{\textwidth}{@{}L L@{}}
+\toprule
+\textbf{Expected (stated in the Week~4 plan)} & \textbf{Observed with real Keycloak tokens}\\
+\midrule
+Acme resource list: 200 & 200; every row belongs to Acme and is published\\
+Globex: 403 & 403 \code{TENANT\_ACCESS\_DENIED} (no grant in Globex)\\
+An admin action in Acme: 403 & 403 for members, audit, SSO configuration and single-resource read; \code{/me} also 403\\
+Expired token: 401 & 401 (a 2-second token used after 3.5 seconds)\\
+Already-issued token after the client is disabled: 401 & 401 on the first request; a new token request fails with \code{invalid\_client}\\
+Audit rows with \code{actor\_type='service'} & Allow and deny rows name the service principal as actor and record the client ID\\
+\bottomrule
+\end{tabularx}
+\caption{AG01 expected versus observed (first observed on 7 November at \texttt{fde2efd}; observed again in the final run, Section~\ref{sec:results}).}
+\end{table}
+
+One provider behaviour surprised us: re-enabling a disabled Keycloak client makes its still-unexpired tokens valid again. For an agent that must stay off, the registry status is the switch to use, and it is tested.
+
+\subsection{AG02: the assistant agent acting for a user}
+\label{sec:ag02-design}
+\paragraph{The promise.} The Week~1 design said: ``A delegation should contain the user, agent, organization, scopes, expiration and revocation information. The effective permission of an agent is limited by three things: user effective permission AND delegated scope AND tenant context.'' It gave the example that an agent delegated a delete scope by a user who cannot delete must not be able to delete. It also listed authorization scenarios 13 (agent reads with delegation: allow) and 14 (agent acts without the scope: deny). The design is recorded in ADR-004 \cite{adr4}.
+
+\paragraph{The flow.} Figure~\ref{fig:ag02} shows the life of a delegation.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[font=\scriptsize,
+  actor/.style={draw, rounded corners=2pt, fill=gray!8, minimum width=2.3cm, minimum height=0.75cm, align=center, font=\footnotesize},
+  arr/.style={-{Stealth[length=1.7mm]}, thick}]
+\def\U{0} \def\A{4.6} \def\G{9.2} \def\K{13.3}
+\node[actor] at (\U,0) {User (Charlie)\\browser client};
+\node[actor] at (\A,0) {Backend API};
+\node[actor] at (\G,0) {Assistant agent};
+\node[actor] at (\K,0) {Keycloak};
+\foreach \x in {\U,\A,\G,\K} \draw[dashed, gray] (\x,-0.4) -- (\x,-9.8);
+\draw[arr] (\U,-1.0) -- node[above]{1. POST /delegations (scopes, expiry)} (\A,-1.0);
+\draw[arr] (\A,-1.7) -- node[above]{2. 201 + delegation ID (audited)} (\U,-1.7);
+\draw[arr, dotted] (\U,-2.4) -- node[above, pos=0.75]{3. hands the ID to the agent} (\G,-2.4);
+\draw[arr] (\G,-3.1) -- node[above]{4. client credentials} (\K,-3.1);
+\draw[arr] (\K,-3.8) -- node[above]{agent token (60 s)} (\G,-3.8);
+\draw[arr] (\G,-4.5) -- node[above]{5. token + X-Delegation-ID + X-Organization-ID} (\A,-4.5);
+\node[draw, fill=orange!10, align=left, text width=3.9cm, anchor=north west] at (\A+0.15,-4.75)
+  {each request: delegation active and owned by this agent? same tenant? user still an active member? exact scope? then decide \emph{as Charlie}};
+\draw[arr] (\A,-7.3) -- node[above]{200 or 403} (\G,-7.3);
+\draw[arr] (\U,-8.0) -- node[above]{6. DELETE /delegations/:id} (\A,-8.0);
+\draw[arr] (\G,-8.7) -- node[above]{7. next request, same token} (\A,-8.7);
+\draw[arr] (\A,-9.4) -- node[above]{401} (\G,-9.4);
+\end{tikzpicture}
+\caption{AG02 delegation lifecycle. The delegation is re-read on every request of the agent, so revocation (step 6) takes effect on the very next request (step 7).}
+\label{fig:ag02}
+\end{figure}
+
+\paragraph{Decisions.}
+\begin{enumerate}
+  \item \textbf{The agent is a service principal with no grants.} It authenticates exactly like AG01, so all service-token checks apply. Its registry row has \code{delegable = true}. Without a delegation it gets 403 in every tenant.
+  \item \textbf{Delegation record.} Table \code{agent\_delegations} with columns \code{service\_principal\_id}, \code{user\_id}, \code{organization\_id}, \code{scopes[]}, \code{expires\_at} and \code{revoked\_at}. A composite foreign key to \code{memberships(user\_id, organization\_id)} means the database refuses a delegation in a tenant the user does not belong to.
+  \item \textbf{What may be delegated.} Scopes are \code{resource:action} strings from a fixed list (Table~\ref{tab:scopes}). Administrative actions are never delegable, even by a tenant administrator: an agent must not change who belongs to a tenant, change the policy or read the audit trail. Expiry is between 60 seconds and 30 days. Only an active, delegable agent can receive a delegation.
+  \item \textbf{Who may delegate.} Any active member, for themself, in the selected tenant, if Casbin allows \code{delegation:manage}. All roles have it by default, and a tenant administrator can deny it per role with a \code{policy\_rules} row.
+  \item \textbf{Using it.} The agent sends its own token plus \code{X-Delegation-ID} and \code{X-Organization-ID}. The request is evaluated with three gates: tenant context (the delegation's tenant, and the user still an active member), delegated scope (exact match, re-read now), and the user's own permission (all hard boundaries and Casbin over the user's \emph{current} roles).
+  \item \textbf{Revoking it.} \code{DELETE /delegations/:id} needs only an active membership, not \code{delegation:manage}, so a tenant policy that blocks creating delegations never blocks withdrawing one.
+  \item \textbf{No chains.} Delegation routes are human-only, so an agent cannot delegate further. A human token carrying \code{X-Delegation-ID} is refused with 400, because it is either a confused client or a forged request.
+  \item \textbf{Audit.} Delegation create and revoke are written in the same transaction, with the user as actor. Agent requests are written with the agent as \code{actor\_id}, the user as \code{subject\_id}, and \code{metadata = \{clientId, delegationId, onBehalfOf\}}, so ``who did it'' and ``for whom'' are both queryable.
+\end{enumerate}
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabularx}{\textwidth}{@{}P{5.0cm} L@{}}
+\toprule
+\textbf{Delegable} & \textbf{Never delegable}\\
+\midrule
+\code{learning-resource:list}, \code{learning-resource:read}, \code{submission:list}, \code{submission:read}, \code{submission:submit}, \code{submission:grade}, \code{profile:read} & \code{member:manage}, \code{policy:manage}, \code{audit:read}, \code{consent:manage}, \code{learning-resource:create}, \code{learning-resource:update}, and delegation management itself\\
+\bottomrule
+\end{tabularx}
+\caption{Delegable scopes. A delegable scope still grants nothing the user cannot do.}
+\label{tab:scopes}
+\end{table}
+
+\paragraph{Why invariant 7 holds.} For a delegated request, \code{authorize()} first denies unless the exact scope is in an active delegation for this tenant, and then runs the \emph{same} code path as for the delegating user, with the user's ID, memberships, roles, ownership and teaching relationships. An allow therefore requires both ``scope delegated'' and ``user allowed''. The user's facts are read at decision time, so a role removed a second ago is already gone. The mutation runner checks that this intersection is load-bearing: M13 removes the second half (returning allow right after the scope check), and three tests fail.
+
+\paragraph{Alternatives considered.}
+\begin{itemize}
+  \item \textbf{OAuth 2.0 Token Exchange (RFC 8693) with an \code{act} claim.} This is the standard shape for delegation, and Keycloak 26 supports standard token exchange. We did not use it in the prototype: the provider would mint user-bound tokens for the agent, the backend would still need the delegation record for scopes and revocation, and immediate revocation would depend on provider token state. One record that is re-read on every request gives the same security property with one source of truth. Token exchange remains a reasonable production direction.
+  \item \textbf{Copy the user's roles onto the agent.} Rejected: the agent's authority would not shrink when the user loses a role, which breaks invariant 7.
+  \item \textbf{Give the agent its own grants (like AG01) per user.} Rejected: grants are not tied to the user's current permission, so a demoted user's agent would keep acting.
+\end{itemize}
+
+\paragraph{Week 1 scenarios 13 and 14.} The Week~1 scenarios used a ``certificate'' resource that the learning platform did not end up having. The same rules are tested on submissions: an agent reads within its delegation (allow, scenario 13); an agent tries an action outside the delegated scope (deny, scenario 14); and the Week~1 example of a scope the user does not hold is tested as ``learner delegates \code{submission:grade}'' (deny, grade unchanged).
+
+\subsection{AG02 test catalogue}
+\code{backend/tests/security/delegation.test.ts} has 22 cases that run through the real Fastify routes on PostgreSQL with signed fixture tokens, and 4 live cases with real Keycloak client-credentials tokens against the running API.
+
+\begin{longtable}{@{}P{0.6cm} P{8.6cm} P{4.2cm}@{}}
+\toprule
+\textbf{\#} & \textbf{Case} & \textbf{Expected}\\
+\midrule
+\endhead
+1 & A user delegates to the assistant in their tenant and sees it listed as active & 201; listed, \code{active=true}\\
+2 & Agent acts within scope: resource list (published only) and the delegator's own submissions & 200; only Charlie's rows\\
+3 & Learner delegates \code{submission:grade}; agent tries to grade & 403; grade unchanged\\
+4 & User can read a course but did not delegate \code{learning-resource:read} & human 200, agent 403\\
+5 & Alice's Acme delegation used in Globex (where she is also a member) & 403\\
+6 & Admin tries to delegate each administrative scope & 400 \code{SCOPE\_NOT\_DELEGABLE}; no row\\
+7 & Admin's agent calls members, audit, SSO config, adds a member, adds a policy, creates a course & 403 each; no course row\\
+8 & Instructor's agent grades a taught course and an untaught one & 200 and 403\\
+9 & Agent submits for the user & 200; row owned by user; audit names agent and user\\
+10 & Revocation; another user's revoke; second revoke & 401 next request; 404; 404\\
+11 & Expired delegation & 401\\
+12 & Delegator loses the learner role, then gets it back & 403, then 200\\
+13 & Delegator's membership suspended & 403 \code{TENANT\_ACCESS\_DENIED}\\
+14 & A different (non-delegable) agent presents the delegation; delegation to a non-delegable or unknown agent & 401; 400 \code{AGENT\_NOT\_DELEGABLE}\\
+15 & Assistant disabled in the registry & 401\\
+16 & No delegation; malformed delegation ID; unknown delegation ID & 403; 401; 401\\
+17 & Agent tries to re-delegate, list or revoke delegations, or use \code{/me}, \code{/sessions}, consents & 403 \code{PRINCIPAL\_KIND\_\allowbreak NOT\_ALLOWED}\\
+18 & Human token with \code{X-Delegation-ID} & 400 \code{DELEGATION\_NOT\_ALLOWED}\\
+19 & Tenant deny policy on \code{delegation:manage} & create 403; revoke still 200\\
+20 & Audit rows for create, use and revoke & user as actor; agent as actor with user as subject\\
+21 & Database insert of a delegation in a tenant without membership & foreign-key violation\\
+22 & Schema: expiry too short or too long, empty scopes, unknown scope & 400 each\\
+L1 & Provider issues a service token for the assistant & \code{principal\_kind=service}, no \code{sid}, no roles\\
+L2 & Real token, no delegation & 403\\
+L3 & Real token with Charlie's delegation & resources 200; own submissions; members 403; Globex 403\\
+L4 & Revoke while the agent holds a valid token & 401 on the next request (time recorded)\\
+\bottomrule
+\caption{AG02 test cases (L = live against Keycloak and the running API).}
+\end{longtable}
+
+\paragraph{Defence in depth and an honest note on mutations.} The tenant binding of a delegation is checked twice: in \code{tenantContextHook} and again in \code{authorize()}. Removing either check alone leaves the other in place, so a single-point mutation of the tenant binding would \emph{survive}. We therefore do not list a mutation for it and do not claim that the tenant binding is mutation-tested; it is tested functionally (case 5 and L3).

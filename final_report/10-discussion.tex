@@ -1,0 +1,31 @@
+\section{Discussion}
+\label{sec:discussion}
+
+\subsection{What worked}
+\paragraph{Splitting ``who are you'' from ``what may you do here''.} Delegating authentication to Keycloak removed a whole class of risks (password storage, login pages, token signing) and let us spend almost all of our effort on the application-side decisions. Every security bug we found in the system was on our side of that line: tenant context, exceptions to guards, relationship checks and evidence. That confirms the mentor's Week~0 advice.
+
+\paragraph{Reading facts at decision time.} Because roles, memberships, teaching assignments, grants and delegations are read from the database on every decision, there is no window in which a removed role still works (except for a request already in flight). The same design made AG02 simple: the agent is evaluated \emph{as} the user, with the user's current facts, so ``never more than the user'' falls out of the structure rather than needing a second permission model.
+
+\paragraph{Letting the database enforce integrity.} Composite foreign keys and triggers make cross-tenant links impossible even if application code is wrong. The AG02 delegation table follows the same pattern: a delegation in a tenant where the user is not a member cannot be inserted at all.
+
+\paragraph{Plans with expected results.} From Week~4 on, our reports wrote down the next week's commands and expected outcomes. When the Week~4 review did not arrive, we could still proceed, and the Week~5 results could be judged against something fixed in advance.
+
+\subsection{Trade-offs we accepted}
+\begin{itemize}
+  \item \textbf{Correctness over latency.} Uncached introspection costs a provider round trip per request (about a third of an agent request in our measurement). We accepted that to make revocation take effect on the next request. A production system could cache positive answers for a few seconds and accept a matching revocation delay; we did not, and we did not claim any optimisation.
+  \item \textbf{A delegation record instead of token exchange.} Simpler and immediately revocable, but not the standard wire format. A production system would likely combine both.
+  \item \textbf{One shared database.} Simple provisioning and database-enforced integrity, at the price of every query needing a tenant filter. We protect that with tests that use real foreign IDs and with mutation M3.
+  \item \textbf{A minimal provisioning slice instead of SCIM.} Enough to prove idempotency, atomicity, quotas and tenant SSO association, but an enterprise cannot yet push joiners and leavers automatically.
+\end{itemize}
+
+\subsection{What we would do differently}
+\begin{enumerate}
+  \item \textbf{Clean-clone verification from the first week.} Most of our evidence problems (issues 17, 18, 23) would have been visible weeks earlier.
+  \item \textbf{Mutation testing from the first guard.} Two of our tests could not fail (issues 20, 21), and we only learned that from a reviewer.
+  \item \textbf{Typecheck the tests from day one} (issue 22).
+  \item \textbf{Schedule independent reproduction early}, on a second machine, instead of leaving it to the end (issue 32).
+  \item \textbf{Close or re-scope promises explicitly.} AG02 should have been either built in Week~5 as planned or formally re-scoped then (issue 3).
+\end{enumerate}
+
+\subsection{On using an AI coding agent}
+The agent wrote code quickly and mostly correctly, including large parts of the tests and documentation. Its mistakes were not random typos; they were \emph{plausible} errors that looked right when read: a checker that could not fail, a test against an object that did not exist, an answer describing what the code was meant to do. The only reliable defence we found was to judge its work by running it on real infrastructure from a clean state, by mutation testing, and by reading the actual logs rather than its summaries. Both team members remain responsible for being able to explain, test and change every part of the code.

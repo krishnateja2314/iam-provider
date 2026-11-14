@@ -1,0 +1,69 @@
+\section{Introduction}
+\label{sec:intro}
+
+\subsection{Motivation}
+A learning SaaS serves people who arrive through very different doors. A student signs in from a phone on a home network. An instructor publishes a course from a laptop. An enterprise employee is enrolled by their company and signs in through the company's own identity provider. On top of that, one person often belongs to several organizations at once. Our running example throughout the project is \textbf{Sam}, who is an \emph{administrator} in Amaravati Learning and, at the same time, a \emph{learner} in IITH University. Sam's administrator rights at Amaravati must never apply inside IITH. In our synthetic test data this person is \emph{Alice}: administrator in \emph{Acme Learning Corp} and learner in \emph{Globex University}.
+
+When identity logic is baked into the main application, such cases break quickly. Each new service re-implements its own permission checks. A tenant ID that the client sends is trusted by mistake. Roles are copied into login tokens and stay valid long after they were removed. Audit questions (``who graded this submission, and was it allowed?'') turn into manual log searches. The standard answer is to separate identity and access management into its own layer that the rest of the system can trust, and to prove with tests that this layer holds.
+
+A second motivation came from our mentor at the very start: \emph{agentic access}. Users are beginning to let programs act for them (``list my assignments'', ``submit this for me''). A program acting for a user must never be able to do more than that user, and must stop the moment the user withdraws permission. Most identity products have no settled answer for this yet.
+
+\subsection{Problem statement}
+Design and implement an identity and access platform for a multi-tenant learning SaaS that cleanly separates four concerns:
+\begin{enumerate}
+  \item \textbf{Authentication}: who is this person or program?
+  \item \textbf{User profile}: what do we know about them, and which fields may be shared?
+  \item \textbf{Tenant membership}: which organizations do they belong to, and in which role?
+  \item \textbf{Authorization}: may they do \emph{this} action on \emph{this} resource, in \emph{this} organization, right now?
+\end{enumerate}
+The platform must support consumer and enterprise sign-in on web and mobile, a secure session lifecycle, fine-grained authorization, tenant provisioning, consent and auditing. It must prove, through automated adversarial tests that are themselves checked, that tenant and privilege boundaries hold.
+
+\subsection{Five shortcuts we set out to avoid}
+\begin{enumerate}
+  \item Trusting the organization ID that the client sends.
+  \item Putting tenant roles inside the login token, where they stay valid until the token expires.
+  \item Merging two accounts because their email addresses match.
+  \item Trusting a token until it expires, so that ``log out'' does not really log anyone out.
+  \item Treating audit logging as an afterthought that can silently fail.
+\end{enumerate}
+Each shortcut maps to a concrete guard in the code and to at least one test that fails if the guard is removed (Section~\ref{sec:mutation}).
+
+\subsection{Milestones and extensions}
+The project brief defined seven milestones (M1--M7). Our mentor added two optional agent extensions, which we called AG01 and AG02.
+
+\begin{table}[H]
+\centering
+\begin{tabularx}{\textwidth}{@{}l P{3.6cm} L@{}}
+\toprule
+\textbf{ID} & \textbf{Milestone} & \textbf{What must be demonstrable}\\
+\midrule
+M1 & Identity and tenant model & Users, external identities, profiles, organizations, memberships and roles are separate linked entities\\
+M2 & Sign-in and federation & Two authentication mechanisms on web and mobile, one of them enterprise federation\\
+M3 & Session lifecycle & Token expiry, refresh rotation, logout, revocation and replay rejection follow a written policy\\
+M4 & Fine-grained authorization & A declarative policy engine evaluated over at least 40 access scenarios\\
+M5 & Tenant provisioning & Idempotent organization creation, admin bootstrap, quotas, suspend and reactivate\\
+M6 & Consent and audit & Queryable audit records; downstream views expose only permitted profile fields\\
+M7 & Security validation & Automated tests prove that cross-tenant access, escalation, revoked sessions and malformed claims are denied\\
+\midrule
+AG01 & Application service principal & A program calls the API as itself, with an explicit and minimal set of permissions, and is audited as a program\\
+AG02 & User-delegated agent & A program acts \emph{for} a user; its permission is never more than the user's, and revocation is immediate\\
+\bottomrule
+\end{tabularx}
+\caption{Project milestones (M1--M7) and the two agent extensions.}
+\label{tab:milestones}
+\end{table}
+
+\subsection{What we delivered}
+In one sentence: a working platform in which Keycloak proves who someone is, and our own backend decides, per tenant and per request, what that person or program may do, with every security claim backed by an executed test on a clean clone of a named commit. Concretely:
+\begin{itemize}
+  \item All seven milestones are implemented and verified. M5 is delivered as the minimal provisioning slice agreed in Week~1, not as full SCIM.
+  \item \textbf{Both} agent extensions are implemented: AG01 (a reporting agent with one grant in one tenant) in Week~5, and AG02 (an assistant that acts for a user through a revocable, scoped delegation) in this final week. AG02 had been promised in the Week~1 design and deferred in every report since; finishing it was the main engineering work of the final week.
+  \item The final clean-clone run of revision \texttt{e13f019} passed every automated test, killed every one of 15 deliberately injected security bugs, and passed an 11-step real-browser proof on two different host names (Section~\ref{sec:results}).
+  \item The project also produced a long list of mistakes. Some were ours, some were made by the AI coding agent we used, and some were surprises in the tools. Section~\ref{sec:mistakes} records each one: what happened, how it was found, why it happened, how it was fixed and what it taught us.
+\end{itemize}
+
+\subsection{How to read the evidence in this report}
+We learned during the project (Section~\ref{sec:mistakes}) that a result from one revision is not evidence for another. Therefore every number in this report states the revision and date it came from. ``Final run'' always means the clean-clone run of \texttt{e13f019} on 14 November 2026; its raw logs are in \code{docs/evidence/2026-11-14/}. Older numbers are labelled with their own revision and are given only for history and comparison.
+
+\subsection{Organisation of the report}
+Section~\ref{sec:background} reviews related work. Section~\ref{sec:timeline} tells the story of the project week by week, including how the scope changed. Section~\ref{sec:design} presents the design: threat model, invariants, decisions and architecture. Section~\ref{sec:impl} describes the implementation module by module, and Section~\ref{sec:agents} the two agent extensions in depth. Section~\ref{sec:testing} explains how we test and how we check our tests. Section~\ref{sec:results} gives the final results. Section~\ref{sec:mistakes} is the complete record of mistakes, issues and fixes. Sections~\ref{sec:discussion}--\ref{sec:conclusion} discuss lessons, limitations, future work and conclusions. The appendices give reproduction commands, the API reference, the database schema, the commit history and an index of evidence files.

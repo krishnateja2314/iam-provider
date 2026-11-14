@@ -1,0 +1,188 @@
+\section{Implementation}
+\label{sec:impl}
+
+The final revision has about 2,840 lines of backend TypeScript in \code{backend/src}, 2,610 lines of tests in \code{backend/tests}, and 1,110 lines of browser client and verification scripts. It has nine backend modules, two browser clients, two Keycloak realm definitions, five database migrations and eleven test files.
+
+\subsection{Technology stack}
+\begin{table}[H]
+\centering
+\small
+\begin{tabularx}{\textwidth}{@{}l P{4.4cm} L@{}}
+\toprule
+\textbf{Layer} & \textbf{Tool and version} & \textbf{Role}\\
+\midrule
+Runtime and API & Node.js 24.21.0, Fastify 5.12.8 & Modular monolith; request hooks; JSON-schema validation of every body, query and parameter\\
+Database & PostgreSQL 16.15, \code{pg} 8.23, Kysely 0.29.6 & Type-safe queries; migrations with checksums; constraints and triggers\\
+Identity provider & Keycloak 26.8.0 & OIDC login, RS256 signing, sessions, refresh rotation, enterprise broker, client credentials\\
+Authorization & Casbin 5.51.1 & Declarative role/resource/action policy with deny-overrides\\
+Token validation & \code{jose} 6.2.12 & Signature and claim verification against the provider's JWKS\\
+Testing & Vitest 5.0.3, Playwright 1.63.0 & Security, integration and live-provider tests; real-browser login proof (Microsoft Edge)\\
+Infrastructure & Docker Compose & Five services; private network for both databases\\
+\bottomrule
+\end{tabularx}
+\caption{Technology stack of the final revision.}
+\end{table}
+
+\subsection{Repository layout}
+\begin{table}[H]
+\centering
+\small
+\begin{tabularx}{\textwidth}{@{}P{5.2cm} L@{}}
+\toprule
+\textbf{Path} & \textbf{Contents}\\
+\midrule
+\code{backend/src/server.ts}, \code{config.ts} & Process start; security configuration check before listening\\
+\code{backend/src/middleware.ts} & Correlation ID, authentication, tenant context and audit helpers\\
+\code{backend/src/routes.ts} & All HTTP routes and the \code{permit()} helper\\
+\code{backend/src/modules/*} & Nine modules (Table~\ref{tab:modules})\\
+\code{backend/src/db/} & Connection, migrations 001--005, schema types, seed\\
+\code{backend/tests/} & Eleven test files (Section~\ref{sec:testing})\\
+\code{clients/} & \code{web.html}, \code{mobile.html}, \code{app.js}, \code{server.mjs} (static server with runtime config and CSP)\\
+\code{infrastructure/keycloak/} & Platform realm and synthetic enterprise realm (JSON import)\\
+\code{scripts/} & Keycloak updater, mutation runner, browser proof, client-config check, latency measurement, AG02 demo\\
+\code{docs/} & ADRs 001--004, threat model, domain model, traceability matrix, evaluation protocol, demo and presentation guides, dated evidence\\
+\bottomrule
+\end{tabularx}
+\caption{Repository layout.}
+\end{table}
+
+\subsection{Backend modules}
+\begin{table}[H]
+\centering
+\small
+\begin{tabularx}{\textwidth}{@{}P{2.3cm} P{5.4cm} L@{}}
+\toprule
+\textbf{Module} & \textbf{File(s)} & \textbf{Responsibility}\\
+\midrule
+Auth & \code{token-validator.ts}, \code{session-service.ts} & Verify access tokens; introspect human and service tokens; list and revoke provider sessions\\
+User & \code{user-service.ts}, \code{privacy-service.ts} & Map \code{(issuer, subject)} to a global user; consent records; profile projection\\
+Organization & \code{membership-service.ts} & Memberships and current tenant roles; own-membership lookup for consent withdrawal\\
+Authorization & \code{authorization-engine.ts} & Hard boundaries, delegation scope, then Casbin\\
+Learning resource & \code{resource-service.ts} & Tenant-bound course and assignment queries\\
+Provisioning & \code{provisioning-service.ts} & Idempotent organization creation, quotas, suspend/reactivate, SSO association and discovery\\
+Audit & \code{audit-service.ts} & Insert and query audit events, optionally inside a transaction\\
+Service principal & \code{service-principal-service.ts} & AG01: registry, tenant gate, exact-grant authorization\\
+Delegation & \code{delegation-service.ts} & AG02: create, list, revoke delegations; resolve and re-check them per request\\
+\bottomrule
+\end{tabularx}
+\caption{Backend modules (files under \code{backend/src/modules/}).}
+\label{tab:modules}
+\end{table}
+
+\subsection{Token validation}
+\code{validateAccessToken} accepts a token only if all of the following hold. Each item has at least one test in \code{t03-t04-t09-token-validation.test.ts} (41 cases) or \code{service-principal.test.ts}.
+\begin{enumerate}
+  \item The RS256 signature verifies against the provider's JWKS (no other algorithm, no \code{none}).
+  \item \code{iss} equals the configured issuer, \code{aud} contains \code{iam-backend}, \code{exp} is in the future with zero clock tolerance, and \code{sub}, \code{iss}, \code{aud}, \code{exp} are present.
+  \item \code{typ} is \code{Bearer}. An ID token (\code{typ=ID}) presented as an API credential is rejected with 401.
+  \item \code{iat}, if present, is a finite number, not in the future, and before \code{exp}.
+  \item Every optional string claim (\code{email}, \code{azp}, \code{sid}, broker claims and others) is a non-empty string if present; \code{email\_verified} is boolean; role claims have the expected shape.
+  \item \code{principal\_kind}, if present, must be exactly \code{service}. Service tokens must carry \code{azp}, must not carry a user session (\code{sid} or \code{session\_state}), and \code{client\_id} must equal \code{azp}.
+  \item Human tokens must come from an allow-listed client (\code{iam-web}, \code{iam-mobile}, and \code{iam-test} only when enabled).
+  \item With introspection on (always, outside \code{NODE\_ENV=test}), the provider must report the token active, for the same subject and client. A service token must also belong to the client's own service-account user, which stops a human token from being relabelled as a service token (mutation M9).
+\end{enumerate}
+A provider network error, an HTTP error from the provider, a malformed introspection answer or a JWKS timeout raises \code{DependencyError} and maps to \textbf{503}. An invalid or inactive credential raises \code{AuthenticationError} and maps to \textbf{401}. Neither ever becomes an allow.
+
+\subsection{Request pipeline and route classes}
+Every protected route declares its hooks explicitly, so no route can skip the tenant check by accident. There are five route classes:
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabularx}{\textwidth}{@{}P{3.0cm} P{5.0cm} L@{}}
+\toprule
+\textbf{Class} & \textbf{Hooks} & \textbf{Routes}\\
+\midrule
+Tenant routes (humans and agents) & \code{principalAuthentication\-Hook}, \code{tenantContextHook}, then \code{permit()} & resources, members, audit events, submissions, grading, profiles, policies, teaching assignments, SSO config\\
+Human tenant routes & \code{authenticationHook}, \code{tenantContextHook} & \code{/delegations} (create, list, revoke)\\
+Own membership (suspension allowed) & \code{authenticationHook}, \code{ownMembershipHook} & \code{POST /consents} (only withdrawal skips \code{permit()})\\
+Human, no tenant & \code{authenticationHook} & \code{/me}, \code{/organizations}, \code{/sessions}, \code{/logout-all}, platform administration\\
+Public & none & \code{/health}, \code{/ready}, \code{/sso/discover}\\
+\bottomrule
+\end{tabularx}
+\caption{Route classes. \code{authenticationHook} refuses any agent credential with 403 \code{PRINCIPAL\_KIND\_NOT\_ALLOWED}.}
+\end{table}
+
+\code{tenantContextHook} treats \code{X-Organization-ID} as untrusted input: a malformed value gives 400; for a human, the user must hold an active membership in an active organization (403 otherwise); for an AG01 agent, the organization must be active and the agent must hold at least one grant there; for an AG02 agent, the organization must be the delegation's organization and the \emph{delegating user} must hold an active membership there.
+
+\subsection{Authorization engine}
+\label{sec:authz}
+\code{authorize(subject, organization, resource, action, resourceId?, context?)} is the single decision point. It evaluates, in this order, and stops at the first deny:
+\begin{enumerate}
+  \item \textbf{AG01 agent}: exact \code{(tenant, resource, action)} grant required; role policies are never consulted.
+  \item \textbf{AG02 agent}: the delegation is re-read; it must be unrevoked, unexpired, in this tenant, for an active delegable agent, and must contain the exact \code{resource:action} scope. Evaluation then continues \emph{as the delegating user}.
+  \item \textbf{Membership}: the user's membership and organization must be active (re-checked here as defence in depth).
+  \item \textbf{Hard boundaries (ABAC/ReBAC)}: a single resource must exist \emph{in this organization} (otherwise 404, so a foreign ID looks exactly like a missing one); non-admins see only published resources; a learner may read only their own submissions; an instructor may read or grade a submission only for a course they teach (\code{teaching\_assignments}); submitting requires a published course.
+  \item \textbf{Casbin (RBAC)}: the user's full current role set in this organization is checked against the built-in policy plus the tenant's own \code{policy\_rules}, with deny-overrides.
+\end{enumerate}
+Any exception in the engine returns a deny with policy \code{error-failclosed}, which \code{permit()} maps to 503.
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabularx}{\textwidth}{@{}l L@{}}
+\toprule
+\textbf{Role} & \textbf{Built-in allows (resource:action)}\\
+\midrule
+admin & learning-resource: read, list, create, update; member: manage; audit: read; policy: manage; submission: read, list, grade\\
+instructor & learning-resource: read, list; submission: read, list, grade (only for taught courses)\\
+learner & learning-resource: read, list; submission: read, list, submit (only own)\\
+all roles & profile: read; consent: manage; delegation: manage\\
+\bottomrule
+\end{tabularx}
+\caption{Built-in Casbin policy. Tenant administrators can add allow or deny rows per role; a deny always wins.}
+\end{table}
+
+\subsection{Provisioning}
+\code{POST /organizations} (platform administrators only) creates an organization, its three system roles, the first administrator's membership, an optional SSO association and the audit event in one transaction. It requires an \code{Idempotency-Key} header. The key is scoped to the calling administrator and stored with a hash of the payload: a retry with the same key and payload returns the original result; the same key with a different payload is a conflict; two concurrent identical requests create one organization. Member and resource quotas are enforced by triggers that lock the organization row. A platform administrator can suspend and reactivate an organization; suspension denies all tenant access except consent withdrawal.
+
+The optional \code{sso} object links the tenant to a unique lower-case email domain and to a broker alias that must exist in the realm. \code{GET /sso/discover?email=} returns the alias, which the client passes to Keycloak as the standard \code{kc\_idp\_hint}. A domain already claimed by another tenant rolls back the whole provisioning.
+
+\subsection{Consent and profile privacy}
+Consent is purpose-specific (\code{profile-sharing}, \code{analytics}) and append-only. A profile read returns only an allowlisted projection (\code{userId}, \code{displayName}, and \code{bio} only if the profile owner has granted \code{profile-sharing} in that tenant). Withdrawing one's own consent is the single operation allowed while the membership or the organization is suspended; granting consent still requires an active membership and a Casbin allow.
+
+\subsection{Audit}
+Every allow and deny on a protected route writes an audit event with actor, actor type (\code{user}, \code{service} or \code{system}), subject, organization, action, resource, decision, reason, correlation ID, IP address and optional metadata. Tokens, passwords and secrets are never written. Mutations write their event in the same transaction. If the audit write fails outside a transaction, the request fails with 503 rather than continuing silently. Tenant administrators can query their own tenant's events by decision and action.
+
+\subsection{Startup configuration check}
+\code{config.ts} validates the security configuration \emph{before} the server binds a port: issuer, audience and database URL are required; introspection may be disabled only when \code{NODE\_ENV=test}; a client secret is required when introspection is on; production requires an \code{azp} allowlist. Any violation prints \code{Startup refused: ...} with variable names only (never values) and exits with code 1.
+
+\subsection{Browser clients}
+\code{web.html} and \code{mobile.html} share \code{app.js}. The client creates a random verifier, state and nonce, sends the S256 challenge, exchanges the code, and validates the ID token's signature, issuer, audience and nonce. Tokens live only in JavaScript memory; they are never written to local storage and never displayed. A refresh may omit the nonce, but a nonce that is present must match, and the subject must not change. Sign-out posts the ID-token hint to the provider so it does not appear in URLs. The client server generates \code{/config.js} and the Content-Security-Policy from one runtime setting, \code{IAM\_PUBLIC\_HOST}, so the same code runs on \code{localhost}, \code{127.0.0.1} or a LAN address. In the final week we added two buttons: \code{GET /delegations} and \code{POST /delegations}, which delegates two read scopes to the assistant agent for 15 minutes.
+
+\subsection{Database migrations}
+\begin{table}[H]
+\centering
+\small
+\begin{tabularx}{\textwidth}{@{}l P{2.0cm} L@{}}
+\toprule
+\textbf{Migration} & \textbf{Week} & \textbf{Contents}\\
+\midrule
+001 initial & W2 & Users, identities, profiles, organizations, memberships, roles, resources, teaching, consents, audit; same-organization triggers\\
+002 boundaries & W2 & Composite keys and foreign keys for cross-tenant integrity; submissions; append-only consent; quota triggers; provisioning requests; policy rules\\
+003 tenant SSO & W4 & \code{organization\_sso\_configs} (tenant $\to$ email domain $\to$ broker alias)\\
+004 service principals & W5 & \code{service\_principals}, \code{service\_principal\_grants} (AG01)\\
+005 agent delegations & Final & \code{service\_principals.delegable}, \code{agent\_delegations} with a composite foreign key to memberships (AG02)\\
+\bottomrule
+\end{tabularx}
+\caption{Database migrations. Each is applied once, in a transaction, under an advisory lock, and its checksum is recorded; a changed migration stops startup.}
+\end{table}
+
+\subsection{Scripts}
+\begin{table}[H]
+\centering
+\small
+\begin{tabularx}{\textwidth}{@{}P{5.1cm} L@{}}
+\toprule
+\textbf{Script} & \textbf{Purpose}\\
+\midrule
+\code{configure-keycloak.mjs} & Brings an existing provider in line with the realm files (clients, redirect URIs for \code{IAM\_PUBLIC\_HOST}, bounded admin roles); enables the password-grant test client only on explicit opt-in\\
+\code{verify-test-independence.mjs} & Mutation runner: breaks one guard at a time in a disposable copy inside the container and checks that the named tests fail (Section~\ref{sec:mutation})\\
+\code{verify-pkce.mjs} & Real-browser proof with Playwright and Microsoft Edge: 11 checks (Section~\ref{sec:browser})\\
+\code{verify-client-config.mjs} & Starts the client server on two host names and checks \code{/config.js} and the CSP (9 checks)\\
+\code{measure-latency.mjs} & Sequential latency observation inside the backend container\\
+\code{demo-delegation.mjs} & AG02 presentation demo: the assistant agent with and without a delegation\\
+\bottomrule
+\end{tabularx}
+\caption{Verification and demo scripts.}
+\end{table}

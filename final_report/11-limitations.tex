@@ -1,0 +1,32 @@
+\section{Limitations and future work}
+\label{sec:limitations}
+
+The prototype proves its security properties in a local lab. It is not production-ready, and several items are deliberately not claimed.
+
+\subsection{Limitations}
+\begin{itemize}
+  \item \textbf{Lab configuration.} Keycloak runs in \code{start-dev} over plain HTTP with public synthetic credentials and client secrets. Production needs TLS, managed secrets, rate limiting, backups and retention policies.
+  \item \textbf{One machine.} All evidence comes from one Windows~11 machine with Docker Desktop. The independent rerun on a second machine by the second team member has not been done.
+  \item \textbf{Mobile is a responsive browser client}, not a native Android or iOS app. There is no native secure storage or device attestation; a provider session ID is not proof of a physical device.
+  \item \textbf{Phone over plain HTTP needs a browser flag}, because PKCE uses \code{crypto.subtle}, which requires a secure context. iPhone Safari was not tested.
+  \item \textbf{Synthetic enterprise federation.} The enterprise sign-in brokers to a second Keycloak realm, not a real company identity provider; there is no SAML and no DNS verification of claimed email domains.
+  \item \textbf{In-flight requests are not re-checked.} Suspension, role removal or delegation revocation applies from the next request; an operation that was already authorized may still complete.
+  \item \textbf{Audit is not tamper-proof.} Events live in an ordinary table with no hash chain or write-once external sink. Provider-side revocations cannot share a database transaction and are logged as separate request and completion events.
+  \item \textbf{Policy administration is minimal.} Tenant administrators can add allow or deny rows but cannot delete them, and there is no policy editor.
+  \item \textbf{Agent administration is minimal.} AG01 grants are written by the seed or a database administrator; there is no grant-management API. AG02 delegations are managed only by the delegating user; there is no tenant-administrator view of all delegations. The live AG01 disable test needs the local bootstrap administrator, because our provider-admin client deliberately cannot manage clients.
+  \item \textbf{Delegation uses a custom header, not a standard token.} AG02 identifies the delegation with \code{X-Delegation-ID} rather than an RFC~8693 token with an \code{act} claim.
+  \item \textbf{Introspection on every request} adds a provider round trip (about 2--3\,ms on one machine). Nothing was optimised.
+  \item \textbf{Latency numbers are observations,} sequential and on one machine, not a throughput or concurrency benchmark.
+  \item \textbf{Process criteria not met:} the evaluation protocol was frozen one day late, and the Week~3 consent fix was late (Section~\ref{sec:mistakes}).
+\end{itemize}
+
+\subsection{Future work}
+\begin{itemize}
+  \item \textbf{Standard delegation tokens.} Issue AG02 authority as RFC~8693 exchanged tokens with an \code{act} claim, keeping the delegation record as the revocation source.
+  \item \textbf{Agent and policy administration.} Audited APIs for tenant administrators to grant and revoke AG01 actions, view and revoke AG02 delegations, and delete policy rows.
+  \item \textbf{Full SCIM 2.0} \code{/Users} and \code{/Groups} endpoints so enterprise identity providers can push joiners and leavers automatically, and DNS verification of claimed SSO domains.
+  \item \textbf{Performance work} from the measured baseline: concurrent load, composite indexes and batched relationship queries, without caching away revocation.
+  \item \textbf{Production hardening:} TLS everywhere, managed secrets, rate limiting, an immutable audit sink, and an explicit consistency policy for in-flight authorization.
+  \item \textbf{Native mobile clients} with platform secure storage, and testing on iOS.
+  \item \textbf{Independent reproduction} on a second machine and in continuous integration.
+\end{itemize}

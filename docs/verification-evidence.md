@@ -3,7 +3,105 @@
 This file is a dated log. Each section states the exact source revision it applies to.
 A result from one revision is not evidence for another.
 
-## 2026-11-07: Current Revision `fde2efd` (W5)
+## 2026-11-14: Final Revision `e13f019` (AG02)
+
+Code revision verified: **`e13f01903f7a53676dd7abd42b6269e0d8c495f6`** (AG02 user-delegated agent).
+Commits after it add documentation, evidence logs and the final report only; no backend, client, realm or
+script changes. Raw, ANSI-stripped logs are in [`docs/evidence/2026-11-14/`](evidence/2026-11-14/). No tokens,
+passwords, cookies or traces are in them.
+
+Environment: Windows 11 host, Docker Desktop 29.4.3 (Linux containers), Node 24.21.0-alpine in the
+backend image, Keycloak 26.8.0, PostgreSQL 16.15-alpine, Vitest 5.0.3, Microsoft Edge through Playwright
+(`IAM_BROWSER_CHANNEL=msedge`). Same machine as earlier runs; another, unrelated project's containers were
+running at the same time.
+
+### Clean clone, new volumes, `e13f019`
+
+`git clone` into an empty directory (no `.env`, no `node_modules`), then
+`docker compose -p iam-finalclean up -d --build --wait` with newly created volumes (none existed beforehand).
+Realm import, migrations 1-5 and seed ran from scratch; all five services were healthy at
+2026-11-14T15:14:33Z (68 s after the start command). The development stack was removed before the run; the
+isolated stack and its volumes were removed afterwards (`docker compose -p iam-finalclean down -v`).
+
+| Check (clean stack) | Command | Result |
+|---|---|---|
+| Typecheck (source and tests) | `docker compose -p iam-finalclean exec -T backend npm run typecheck` | PASS (exit 0) |
+| Build | `... exec -T backend npm run build` | PASS (exit 0) |
+| Dependency audit | `... exec -T backend npm audit` | **found 0 vulnerabilities** |
+| Client configuration | `node scripts/verify-client-config.mjs` | 9 of 9 PASS |
+| Complete suite incl. live provider | `IAM_ALLOW_PASSWORD_GRANT_TESTS=true node scripts/configure-keycloak.mjs --enable-test-client`, then `... exec -T backend env KEYCLOAK_INTROSPECTION=false RUN_DATABASE_TESTS=1 RUN_KEYCLOAK_TESTS=1 npm test`, then `node scripts/configure-keycloak.mjs` | **253 passed, 0 failed, 0 skipped**, 11 files, 18.8 s |
+| AG02 outcome command | `... exec -T backend env RUN_DATABASE_TESTS=1 RUN_KEYCLOAK_TESTS=1 npx vitest run tests/security/delegation.test.ts` | **26 passed** (22 fixture/HTTP, 4 live) |
+| AG01 outcome command | `... npx vitest run tests/security/service-principal.test.ts` | 30 passed (23 fixture/introspection, 7 live) |
+| Mutation independence | `COMPOSE_PROJECT_NAME=iam-finalclean node scripts/verify-test-independence.mjs` | baseline 233 pass / 0 fail / 20 skip (live cases skip by design); **15 of 15 killed**, 0 survived, 0 inconclusive; working tree unchanged |
+| Runner control, database stopped | `docker stop iam-finalclean-postgres-1`, then the runner | `INCONCLUSIVE baseline` (Vitest killed by the runner's 300 s timeout, exit 143), **exit 2** |
+| Real browser proof | `IAM_BROWSER_CHANNEL=msedge node scripts/verify-pkce.mjs` | **11 of 11 PASS** (new step: AG02 delegation created in the browser) |
+| Alternate origin | `IAM_PUBLIC_HOST=127.0.0.1` stack + configure, then the browser proof and `scripts/demo-delegation.mjs` | **11 of 11 PASS**; agent under issuer `127.0.0.1`: no delegation 403, with delegation resources 200 (3 rows) and own submissions 200 (2 rows), members 403, other tenant 403 |
+
+Per-file counts of the complete suite: authorization 59, token-validation 41, api 31, service-principal 30
+(7 live), **delegation 26 (4 live)**, session-lifecycle 21 (6 live), startup-config 12, tenant-sso 10 (3 live),
+provisioning-privacy 9, identity-membership 8, t10-audit 6. Logs: `clean-up.log`, `clean-checks.log`,
+`clean-full.log`, `clean-ag02.log`, `clean-ag01.log`, `clean-mutation.log`, `mutation.json`,
+`mutation-db-down.log`, `clean-pkce.log`, `pkce-127.0.0.1.log`, `latency.log`.
+
+### Final outcome: AG02 user-delegated agent
+
+Design: [`adr/ADR-004-delegated-agents.md`](adr/ADR-004-delegated-agents.md). Promised in the Week 1 design
+(security invariant 7, scenarios 13-14); listed as future work in W3-W5.
+
+| Property | Observed (clean stack) |
+|---|---|
+| Agent without a delegation | 403 in Acme (fixture and live) |
+| Within the delegated scope | 200; published resources only; only the delegator's own submissions (fixture and live) |
+| Scope delegated but the user lacks it (learner + `submission:grade`) | 403; grade unchanged |
+| User has it but did not delegate it | human 200, agent 403 |
+| Teaching relationship | instructor's agent: taught course 200, untaught 403 |
+| Tenant binding | Acme delegation used in Globex: 403 (fixture and live) |
+| Administrative scopes | 400 `SCOPE_NOT_DELEGABLE`; an admin's agent gets 403 on six admin routes |
+| Revocation | live: first request after revocation **401, 17 ms** (14 ms in the AG02 command run) |
+| Expiry / role loss / suspension / disabled agent | 401 / 403 then 200 when restored / 403 / 401 |
+| Re-delegation; human token with `X-Delegation-ID` | 403 `PRINCIPAL_KIND_NOT_ALLOWED`; 400 `DELEGATION_NOT_ALLOWED` |
+| Audit | agent as `actor_id` (`actor_type='service'`), delegator as `subject_id`, `metadata.delegationId`; create/revoke by the user in the same transaction |
+
+Mutations added for the new guards, each killed on the clean stack:
+
+| ID | Guard broken on purpose | Result |
+|---|---|---|
+| M12 | Delegated agent needs the exact delegated scope | Killed (2 tests) |
+| M13 | Agent also limited by the delegator's permission (intersection) | Killed (3) |
+| M14 | Revoked delegation refused | Killed (1) |
+| M15 | Only delegable agents can receive a delegation | Killed (1) |
+
+Not mutation-tested on purpose: the delegation's tenant binding is checked in both `tenantContextHook` and
+`authorize()`, so removing one check alone would survive. It is tested functionally.
+
+### Live provider observations (clean stack)
+
+| Operation | First existing-token request | Operation start to denial |
+|---|---|---|
+| Provider logout | 401 | 64 ms |
+| Own-session API revocation | 401 | 60 ms |
+| Admin logout-all | 401 | 33 ms and 174 ms |
+| AG01 client disabled | 401 | 29 ms (20 ms in the AG01 command run) |
+| AG02 delegation revoked | 401 | 17 ms (14 ms in the AG02 command run) |
+
+Password reset and refresh replay behave as in every earlier run (reset alone does not revoke; replay kills the family).
+
+### Latency observation
+
+Inside the backend container, 3 x 200 sequential requests per series; all 1,800 responses 200. Medians across
+runs: `/health` p50 0.65 / p95 1.54 ms; introspection alone p50 3.29 / p95 5.58 ms; AG01 agent list p50 9.25 /
+p95 15.14 ms. All series, including those untouched by code changes, are higher than on 7 Nov (machine load is the
+likely cause; not proven). Introspection remains roughly a third of an authenticated agent request. Not a benchmark.
+
+### Not done / not claimed
+
+- No independent rerun on a second machine (owner: Jaya Prakash).
+- The physical-phone run (7 Nov, code identical to `fde2efd`) was not repeated for this change, which adds two buttons and no login-flow change.
+- DNS domain verification, SCIM, a grant/delegation administration API, standard token exchange for AG02, and a real corporate IdP.
+
+---
+
+## 2026-11-07: Revision `fde2efd` (W5)
 
 Code revision verified: **`fde2efd76a1e30b08577118cc86540c453bf2129`** (W5: AG01 service principal
 and dependency remediation). The commit after it adds documentation, evidence logs and
@@ -109,7 +207,7 @@ was attempted.
 
 - No independent rerun on a second machine yet (owner: Jaya Prakash).
 - Physical phone: **done the same day** on a realme 11 Pro+ 5G, Android 15, Chrome 156, over the phone's hotspot. All 10 steps behaved as expected, including Globex `/members` 403 for Alice and Acme `/members` 403 for the brokered enterprise user. The Chrome secure-origin flag was needed, because PKCE uses `crypto.subtle`. See [`evidence/2026-11-07/phone-run.md`](evidence/2026-11-07/phone-run.md).
-- AG02 (user-delegated agent), DNS domain verification, SCIM, a grant-management API and a real corporate IdP.
+- AG02 (user-delegated agent; built on 2026-11-14, see above), DNS domain verification, SCIM, a grant-management API and a real corporate IdP.
 - The latency numbers are not a benchmark.
 
 ---

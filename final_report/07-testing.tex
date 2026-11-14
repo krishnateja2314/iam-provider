@@ -1,0 +1,80 @@
+\section{Testing methodology}
+\label{sec:testing}
+
+\subsection{Principle: evidence must be able to fail}
+The most important thing we learned about testing came from our own mistakes (Section~\ref{sec:mistakes}): a test that cannot fail, or a result copied from an older revision, is not evidence. Our final methodology therefore has three layers: the tests themselves; checks that the tests can fail (mutation testing); and a protocol that ties every reported number to a clean clone of a named commit.
+
+\subsection{Kinds of tests}
+\begin{table}[H]
+\centering
+\small
+\begin{tabularx}{\textwidth}{@{}P{3.3cm} L P{3.6cm}@{}}
+\toprule
+\textbf{Kind} & \textbf{What it uses} & \textbf{Where}\\
+\midrule
+Signed fixture tokens & Tokens signed with a test RSA key and validated by the real production validator against a local JWKS & token validation, authorization, API, agents\\
+Real PostgreSQL & The real schema, constraints and triggers in the Compose database; no database mocks & all \code{RUN\_DATABASE\_TESTS=1} cases\\
+Injected HTTP & The real Fastify routes and hooks, called in-process with \code{app.inject} & \code{api}, \code{service-principal}, \code{delegation}, \code{tenant-sso}\\
+Mocked provider & A stubbed \code{fetch} for introspection contracts: outage, HTTP 500/503, inactive, mismatched client & token validation, \code{service-principal}\\
+Live provider & Real Keycloak tokens (password grant on the opt-in test client, client credentials for agents) against the running API & 16 + 4 live cases\\
+Subprocess & Spawns the real server with unsafe configuration and checks exit code and port & \code{startup-config}\\
+Real browser & Playwright drives Microsoft Edge through the real login pages & \code{verify-pkce.mjs}\\
+Mutation & Breaks one guard at a time and requires named tests to fail & \code{verify-test-\allowbreak independence.mjs}\\
+\bottomrule
+\end{tabularx}
+\caption{Kinds of tests used in the project.}
+\end{table}
+
+\subsection{Test files}
+\begin{table}[H]
+\centering
+\small
+\begin{tabularx}{\textwidth}{@{}P{5.1cm} L@{}}
+\toprule
+\textbf{File} & \textbf{What it attacks or checks}\\
+\midrule
+\code{t05-t08-authorization} & 48 role/resource/action combinations plus 11 hard-boundary, role-change and deny-precedence cases\\
+\code{t03-t04-t09-token-validation} & Wrong key, issuer, audience, algorithm; expired tokens; ID token used as API credential; malformed claims\\
+\code{api} (integration) & Real foreign submission and third tenant; non-member headers; unrelated grading; audit-failure rollback; consent under suspension; exact 503 on provider outage\\
+\code{service-principal} & AG01: one grant; other tenants and admin actions denied; expiry; disablement; audit; introspection binding\\
+\code{delegation} (new) & AG02: the 26 cases of Section~\ref{sec:agents}\\
+\code{session-lifecycle} & Introspection contract; live logout, revocation, logout-all, password reset, refresh expiry and replay\\
+\code{startup-config} & Unsafe configuration stops the server before it binds a port\\
+\code{tenant-sso} & Per-tenant email domain and broker association; live Keycloak routing\\
+\code{provisioning-privacy} & Concurrent idempotent provisioning, payload conflicts, quotas, suspend/reactivate, consent\\
+\code{t01-t02-identity-membership} & Issuer/subject uniqueness, no email merge, 12 concurrent first logins create one user\\
+\code{t10-audit} & Required audit fields, filtering, no secrets logged\\
+\bottomrule
+\end{tabularx}
+\caption{Test files of the final revision. Per-file counts are in Table~\ref{tab:suite}.}
+\end{table}
+
+\subsection{Authorization scenarios}
+Milestone M4 asks for at least 40 access scenarios. The authorization test file has 59: all 48 combinations of three roles, eight resource types and the relevant actions, plus 11 cases for hard boundaries (unpublished resources, submission ownership, the teaching relationship, role changes that must apply on the next decision, and deny precedence across roles). The API, agent and delegation files add many more scenario-style cases through real routes, including the Week~1 scenarios 13 and 14 for delegation.
+
+\subsection{Mutation testing of security guards}
+\label{sec:mutation}
+\code{scripts/verify-test-independence.mjs} answers the question ``would our tests notice if this guard were broken?''. Its contract, written after the Week~3 review exposed the first version (Section~\ref{sec:mistakes-w3}), is:
+\begin{enumerate}
+  \item It needs the running stack; nothing is mocked. It never modifies the working tree; each run happens in a disposable copy of the backend inside the container.
+  \item The container's source must be byte-identical to the checkout (it compares SHA-256 hashes of every file), otherwise the run stops.
+  \item A clean baseline must pass first, and every test that a mutation names as its ``expected killer'' must exist and pass in that baseline.
+  \item One mutation at a time. Its text anchor must occur exactly once in the file, or the run is aborted.
+  \item A mutation counts as \textbf{killed} only if every named test fails with an assertion failure. Suite crashes, import errors and connection errors are \textbf{inconclusive}.
+  \item Exit code 0 means all killed, 1 means a mutation survived, 2 means inconclusive or infrastructure failure.
+\end{enumerate}
+As a control, we stop the database container and run it again: it must report \textsc{inconclusive} and exit 2, never success. The fifteen mutations are listed with their results in Table~\ref{tab:mutations}.
+
+\subsection{Real-browser proof}
+\label{sec:browser}
+\code{scripts/verify-pkce.mjs} drives Microsoft Edge through Playwright against the running stack. Tokens stay in process memory; no traces, HAR files or screenshots are saved. It checks, in order: that the provider's admin service account cannot change realm settings; that a wrong PKCE verifier is rejected; web login with S256 PKCE and full signed-claim checks; the tenant selector and the admin/learner boundary for the same user; \textbf{(new)} an AG02 delegation created by clicking the new button, then used by the real agent; mobile login; enterprise broker login on web and mobile; session listing and refusal to delete another user's session; refresh rotation and replay rejection; and revocation of one session without affecting another device.
+
+\subsection{Evaluation protocol and clean-clone discipline}
+The evaluation protocol (\code{docs/evaluation-protocol.md}) fixes the acceptance criteria. It was frozen on 10 October, one day after the deadline the mentor set (Section~\ref{sec:mistakes-w3}); we recorded that and did not change its criteria afterwards. From Week~4 on, every reported run follows the same procedure:
+\begin{enumerate}
+  \item \code{git clone} the commit into an empty directory (no \code{.env}, no \code{node\_modules}).
+  \item Start it under its own Compose project name with \emph{newly created} volumes, so realm import, migrations and seed run from scratch.
+  \item Run typecheck (source and tests), build, \code{npm audit}, the client-configuration check, the full suite with the live provider, the outcome command for the week, the mutation runner and its database-down control, the browser proof, and the browser proof again on an alternate host name.
+  \item Save ANSI-stripped logs under \code{docs/evidence/<date>/} with no tokens or secrets, and remove the isolated stack and its volumes.
+\end{enumerate}
+The live password-grant test client is enabled explicitly before the suite and disabled again afterwards.

@@ -30,7 +30,7 @@ and tests that actively try to break it.
 - **Shape:** a modular monolith, meaning one Fastify process, one PostgreSQL database,
   and five Docker containers in total.
 
-**Proof.** 227/227 tests pass from a clean clone (16 of them against a live Keycloak). After logout, the
+**Proof.** 253/253 tests pass from a clean clone (20 of them against a live Keycloak). After logout, the
 old token is rejected on the very next request, 26–146 ms later. A separate script
 breaks 11 security guards one at a time and the tests catch all 11.
 
@@ -179,12 +179,13 @@ Code to show if asked: `backend/src/middleware.ts` (gates 1–2) and
 
 | Claim | Number |
 |---|---|
-| Tests | **227 passed, 0 failed, 0 skipped**, clean clone of `fde2efd`, 7 Nov 2026 |
+| Tests | **253 passed, 0 failed, 0 skipped**, clean clone of `e13f019`, 14 Nov 2026 |
 | Biggest suite | Authorization: **59** (48 role cases + 11 boundary cases) |
 | Token validation cases | **41** |
 | Live Keycloak tests | **16** (6 session, 3 SSO, 7 agent) |
 | Agent (AG01) tests | **30**; Acme list 200, Globex 403, admin 403, expired 401, disabled 401 |
-| Mutation check | **11 of 11** broken guards caught |
+| Mutation check | **15 of 15** broken guards caught |
+| Agent (AG02) tests | **26**; learner + grade scope 403, revoked delegation 401 on next request, other tenant 403 |
 | Logout → old token rejected | **45 ms** logout, **41 ms** revoke one session, **26 / 146 ms** logout-all (local samples, not an SLA) |
 | Introspection cost | about **2.4 ms** of a **6.9 ms** agent request (p50, one machine) |
 | Dependency audit | `npm audit`: **0 vulnerabilities** |
@@ -220,8 +221,9 @@ What testing taught us:
 ## 8. What is left (say it confidently, not apologetically)
 
 - **Built in W5:** the AG01 reporting agent as a service principal, and a latency observation (not an optimisation).
-- **Not built:** AI agents acting for a user (design: *agent permission = user permission ∩
-  delegated scope ∩ tenant*), a grant-management API, full SCIM, and performance optimisation.
+- **Built in the final week:** AG02, an assistant agent acting for a user (*agent permission = user permission ∩
+  delegated scope ∩ tenant*); demo with `scripts/demo-delegation.mjs` (demo guide, AG02 section).
+- **Not built:** a grant/delegation administration API, standard token exchange for AG02, full SCIM, and performance optimisation.
 - **Lab setup only:** Keycloak in dev mode over plain HTTP, synthetic passwords, no rate limiting.
 - **Mobile** is a responsive web page, not a native app. **Enterprise SSO** is a second
   Keycloak realm, not a real company's identity provider, and there's no SAML.

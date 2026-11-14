@@ -1,0 +1,13 @@
+== latency 2026-11-14T15:22:51Z
+Latency observation: 3 runs x 200 sequential requests per series, API http://127.0.0.1:3100, 2026-11-14T15:22:51.564Z
+{"series":"health","run":1,"p50":0.83,"p95":1.54,"p99":1.8,"mean":0.93,"statuses":{"200":200}}
+{"series":"health","run":2,"p50":0.65,"p95":1.91,"p99":7.23,"mean":1.05,"statuses":{"200":200}}
+{"series":"health","run":3,"p50":0.62,"p95":1.44,"p99":2.94,"mean":0.78,"statuses":{"200":200}}
+{"series":"introspect","run":1,"p50":4.04,"p95":7.14,"p99":7.99,"mean":4.32,"statuses":{"200":200}}
+{"series":"introspect","run":2,"p50":3.29,"p95":5.56,"p99":7.36,"mean":3.5,"statuses":{"200":200}}
+{"series":"introspect","run":3,"p50":2.73,"p95":5.58,"p99":8.3,"mean":3.2,"statuses":{"200":200}}
+{"series":"agent-list","run":1,"p50":9.25,"p95":15.14,"p99":18.98,"mean":9.91,"statuses":{"200":200}}
+{"series":"agent-list","run":2,"p50":9.75,"p95":15.23,"p99":18.98,"mean":10.13,"statuses":{"200":200}}
+{"series":"agent-list","run":3,"p50":7.74,"p95":11.68,"p99":15.45,"mean":8.14,"statuses":{"200":200}}
+{"summary":"median across runs (ms)","health":{"p50":0.65,"p95":1.54},"introspect":{"p50":3.29,"p95":5.58},"agent-list":{"p50":9.25,"p95":15.14},"allStatus200":true}
+exit 0

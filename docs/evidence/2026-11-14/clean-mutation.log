@@ -1,0 +1,65 @@
+== mutation 2026-11-14T15:15:22Z
+Commit e13f01903f7a53676dd7abd42b6269e0d8c495f6
+Container source matches checkout.
+Baseline (no mutation)...
+  passed 233, failed 0, skipped 20
+M1 Tenant membership check in tenantContextHook: KILLED (4 failing tests)
+    x API Integration: Tenant-Scoped Resources accessing org where user has no membership returns 403
+    x HTTP adversarial resource/submission validation learner cannot select draft resources
+    x HTTP adversarial resource/submission validation instructor list contains assigned submissions only
+    x AG02 user-delegated agent through the API (signed fixtures, real PostgreSQL) when the delegator's membership is suspended, the agent is refused at the tenant gate (403)
+M2 JWT signature verification: KILLED (9 failing tests)
+    x T03/T04/T09: production access token validation with real JOSE signatures rejects an invalid signature with the same trusted kid
+    x T03/T04/T09: production access token validation with real JOSE signatures rejects expiration
+    x T03/T04/T09: production access token validation with real JOSE signatures requires exp
+    x T03/T04/T09: production access token validation with real JOSE signatures requires iss
+    x T03/T04/T09: production access token validation with real JOSE signatures rejects mismatched claims {"iss":"https://attacker.invalid/realms/iam-platform"}
+    x T03/T04/T09: production access token validation with real JOSE signatures rejects mismatched claims {"aud":"iam-web"}
+    x T03/T04/T09: production access token validation with real JOSE signatures rejects malformed claims {"exp":"9999999999"}
+    x T03/T04/T09: production access token validation with real JOSE signatures rejects malformed claims {"iss":123}
+    x T03/T04/T09: production access token validation with real JOSE signatures rejects a signed non-RS256 algorithm
+M3 Tenant filter on submission lookup in authorize(): KILLED (1 failing test)
+    x HTTP adversarial resource/submission validation selector/resource substitution: a REAL Globex submission cannot be read or graded through the Acme selector
+M4 Consent route admits suspended members for withdrawal: KILLED (4 failing tests)
+    x HTTP adversarial resource/submission validation consent grants bio only for its purpose and withdrawal remains possible during suspension
+    x HTTP adversarial resource/submission validation suspension (membership AND organization) permits only own withdrawal; grants and foreign tenants denied; history and audit preserved
+    x AG02 user-delegated agent through the API (signed fixtures, real PostgreSQL) a delegated agent cannot re-delegate or use human-only routes (403 PRINCIPAL_KIND_NOT_ALLOWED)
+    x AG01 service principal through the API (signed fixtures, real PostgreSQL) human-only routes refuse service principals (403 PRINCIPAL_KIND_NOT_ALLOWED)
+M5 Fatal security-config check before listen(): KILLED (1 failing test)
+    x server entry point (subprocess) production with KEYCLOAK_INTROSPECTION=false exits 1 before listening
+M6 Provider outage reported as dependency error (503), not bad credential: KILLED (6 failing tests)
+    x API Integration: Authentication provider dependency contract introspection network failure / timeout denies with exactly 503 DEPENDENCY_UNAVAILABLE
+    x API Integration: Authentication provider dependency contract introspection provider HTTP 500 denies with exactly 503 DEPENDENCY_UNAVAILABLE
+    x API Integration: Authentication provider dependency contract introspection provider HTTP 503 denies with exactly 503 DEPENDENCY_UNAVAILABLE
+    x AG01 provider introspection binding for service tokens a provider outage is a dependency failure (503), not an invalid credential
+    x Uncached fail-closed provider session authentication introspection timeout is a dependency failure (DependencyError -> 503), not an invalid credential
+    x Uncached fail-closed provider session authentication rejects access when introspection fetch returns 500 error
+M7 Casbin explicit-deny precedence: KILLED (3 failing tests)
+    x AG02 user-delegated agent through the API (signed fixtures, real PostgreSQL) a tenant deny policy stops users creating delegations, but never stops them revoking one
+    x T05-T08: hard tenant and relationship boundaries explicit deny overrides an admin allow and policy changes take effect next decision
+    x T05-T08: hard tenant and relationship boundaries explicit deny on one role wins over an allow on another role
+M8 Service principal registry: disabled principal refused: KILLED (1 failing test)
+    x AG01 service principal through the API (signed fixtures, real PostgreSQL) unregistered and disabled service principals are rejected with 401
+M9 Service token bound to its client service account at introspection: KILLED (1 failing test)
+    x AG01 provider introspection binding for service tokens rejects a human user token relabelled as a service token
+M10 Human-only routes refuse service principals: KILLED (3 failing tests)
+    x AG02 user-delegated agent through the API (signed fixtures, real PostgreSQL) a delegated agent cannot re-delegate or use human-only routes (403 PRINCIPAL_KIND_NOT_ALLOWED)
+    x AG01 service principal through the API (signed fixtures, real PostgreSQL) human-only routes refuse service principals (403 PRINCIPAL_KIND_NOT_ALLOWED)
+    x AG01 service principal through the API (signed fixtures, real PostgreSQL) audit rows record actor_type=service with the service principal as actor and its client
+M11 Service grant matches the exact action: KILLED (1 failing test)
+    x AG01 service principal through the API (signed fixtures, real PostgreSQL) cannot perform admin or other ungranted actions in Acme (403)
+M12 Delegated agent needs the exact delegated scope: KILLED (2 failing tests)
+    x AG02 user-delegated agent through the API (signed fixtures, real PostgreSQL) a permission the user holds but did not delegate is denied: single-resource read without learning-resource:read (403)
+    x AG02 user-delegated agent through the API (signed fixtures, real PostgreSQL) an admin's agent still cannot reach admin routes: members, audit, policy and resource creation (403)
+M13 Delegated agent is also limited by the delegator's own permission (intersection): KILLED (3 failing tests)
+    x AG02 user-delegated agent through the API (signed fixtures, real PostgreSQL) a delegated scope the user does not hold grants nothing: learner + submission:grade cannot grade (403)
+    x AG02 user-delegated agent through the API (signed fixtures, real PostgreSQL) the teaching relationship still applies: an instructor's agent grades a taught course (200) but not an untaught one (403)
+    x AG02 user-delegated agent through the API (signed fixtures, real PostgreSQL) when the delegator loses the role, the agent loses it on the next request (403), and regains nothing extra after
+M14 Revoked delegation refused: KILLED (1 failing test)
+    x AG02 user-delegated agent through the API (signed fixtures, real PostgreSQL) revocation applies on the agent's next request (401); a second revoke and another user's revoke are 404
+M15 Only delegable agents can receive a delegation: KILLED (1 failing test)
+    x AG02 user-delegated agent through the API (signed fixtures, real PostgreSQL) only the named agent can use a delegation; a non-delegable agent can neither use nor receive one
+
+Working tree unchanged. 15 killed, 0 survived, 0 inconclusive.
+exit 0
+(empty status above = working tree unchanged)

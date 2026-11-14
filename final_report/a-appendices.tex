@@ -1,0 +1,178 @@
+\section{Reproducing the results}
+\label{app:repro}
+With Docker Desktop and Node.js installed, from an empty directory:
+\begin{verbatim}
+git clone https://github.com/krishnateja2314/iam-provider
+cd iam-provider
+docker compose up -d --build --wait
+\end{verbatim}
+The web client is at \code{http://localhost:5173/web.html} and the mobile-style client at \code{http://localhost:5173/mobile.html}. Synthetic users: \code{alice / alice123} (admin at Acme, learner at Globex), \code{bob / bob123} (instructor at Acme), \code{enterprise.bob / enterprise-bob123} (through the enterprise broker).
+
+\paragraph{Complete suite including the live provider.}
+\begin{verbatim}
+IAM_ALLOW_PASSWORD_GRANT_TESTS=true \
+  node scripts/configure-keycloak.mjs --enable-test-client
+docker compose exec -T backend env KEYCLOAK_INTROSPECTION=false \
+  RUN_DATABASE_TESTS=1 RUN_KEYCLOAK_TESTS=1 npm test
+node scripts/configure-keycloak.mjs          # disables the test client again
+\end{verbatim}
+
+\paragraph{The two agent outcome commands.}
+\begin{verbatim}
+docker compose exec -T backend env RUN_DATABASE_TESTS=1 RUN_KEYCLOAK_TESTS=1 \
+  npx vitest run tests/security/service-principal.test.ts   # AG01: 30
+docker compose exec -T backend env RUN_DATABASE_TESTS=1 RUN_KEYCLOAK_TESTS=1 \
+  npx vitest run tests/security/delegation.test.ts          # AG02: 26
+\end{verbatim}
+
+\paragraph{Mutation runner, browser proof, latency.}
+\begin{verbatim}
+node scripts/verify-test-independence.mjs        # exit 0: all killed
+npm --prefix backend ci                          # host packages for Playwright
+IAM_BROWSER_CHANNEL=msedge node scripts/verify-pkce.mjs
+docker compose exec -T backend node --input-type=module - \
+  < scripts/measure-latency.mjs
+\end{verbatim}
+
+\paragraph{AG02 live demo.} Sign in to the web client as Alice, select Globex, press \code{POST /delegations}, copy the delegation ID, then:
+\begin{verbatim}
+node scripts/demo-delegation.mjs <delegation-id> \
+  10000000-0000-0000-0000-000000000002
+\end{verbatim}
+\code{docs/demo-guide.md} has the full walkthrough, including the phone procedure.
+
+\section{API reference}
+\label{app:api}
+\begin{longtable}{@{}P{1.6cm} P{5.4cm} P{2.3cm} P{4.4cm}@{}}
+\toprule
+\textbf{Method} & \textbf{Path} & \textbf{Class} & \textbf{Decision}\\
+\midrule
+\endhead
+GET & \code{/health}, \code{/ready} & public & ---\\
+GET & \code{/api/v1/sso/discover?email=} & public & broker alias for the email domain, or 404\\
+GET & \code{/api/v1/me}, \code{/api/v1/organizations} & human & own user and memberships\\
+GET & \code{/api/v1/resources} & tenant & \code{learning-resource:list}; non-admins published only\\
+GET & \code{/api/v1/resources/:id} & tenant & \code{learning-resource:read}; 404 if not in tenant\\
+POST & \code{/api/v1/resources} & tenant & \code{learning-resource:create}; quota; audited in transaction\\
+GET & \code{/api/v1/members} & tenant & \code{member:manage}\\
+POST & \code{/api/v1/members} & tenant & \code{member:manage}; quota\\
+GET & \code{/api/v1/audit-events} & tenant & \code{audit:read}\\
+GET & \code{/api/v1/submissions} & tenant & \code{submission:list}; own, taught or all (admin)\\
+POST & \code{/api/v1/submissions} & tenant & \code{submission:submit}; published course\\
+GET & \code{/api/v1/submissions/:id} & tenant & \code{submission:read}; owner or teaching instructor\\
+PATCH & \code{/api/v1/submissions/\allowbreak :id/grade} & tenant & \code{submission:grade}; teaching relationship; audited in transaction\\
+GET & \code{/api/v1/profiles/:userId} & tenant & \code{profile:read}; consent-filtered projection\\
+POST & \code{/api/v1/policies} & tenant & \code{policy:manage}; adds allow or deny row\\
+GET & \code{/api/v1/teaching-assignments} & tenant & \code{submission:list}\\
+GET & \code{/api/v1/sso-config} & tenant & \code{member:manage}\\
+POST & \code{/api/v1/consents} & own membership & withdrawal always (even suspended); grant needs \code{consent:manage}\\
+POST & \code{/api/v1/delegations} & human tenant & \code{delegation:manage}; delegable scopes only\\
+GET & \code{/api/v1/delegations} & human tenant & \code{delegation:manage}; own only\\
+DELETE & \code{/api/v1/delegations/:id} & human tenant & own delegation; never blocked by policy\\
+POST & \code{/api/v1/organizations} & human & platform admin; \code{Idempotency-Key}\\
+PATCH & \code{/api/v1/platform/\allowbreak organizations/:id/status} & human & platform admin; suspend or reactivate\\
+GET & \code{/api/v1/sessions} & human & own provider sessions\\
+DELETE & \code{/api/v1/sessions/:id} & human & own session; audited before and after\\
+POST & \code{/api/v1/logout-all} & human & own sessions\\
+\bottomrule
+\caption{HTTP API. ``tenant'' routes accept humans, AG01 agents and AG02 agents; ``human'' routes refuse agents with 403.}
+\end{longtable}
+
+\paragraph{Status codes.} 400 malformed input or tenant selector, or a delegation header on a human token; 401 invalid, expired, revoked or inactive credential, or an unknown, revoked or expired delegation; 403 no membership, grant or permission; 404 resource not in the selected tenant; 409 idempotency payload conflict; 503 provider, audit or authorization storage unavailable (never an allow).
+
+\section{Database tables}
+\label{app:schema}
+\begin{longtable}{@{}P{4.9cm} P{1.5cm} P{7.3cm}@{}}
+\toprule
+\textbf{Table} & \textbf{Migr.} & \textbf{Purpose and key constraints}\\
+\midrule
+\endhead
+\code{users} & 001 & Global user; display name\\
+\code{authentication\_identities} & 001 & External login; unique \code{(issuer, subject)}; never merged by email\\
+\code{profiles} & 001 & Display name, bio\\
+\code{organizations} & 001 & Tenant; status active or suspended; quotas\\
+\code{memberships} & 001 & Unique \code{(user, organization)}; status\\
+\code{roles} & 001 & Per-organization roles\\
+\code{membership\_roles} & 001/002 & Composite FKs force role and membership into the same organization\\
+\code{learning\_resources} & 001 & Courses and assignments; status draft, published, archived\\
+\code{teaching\_assignments} & 001/002 & Instructor teaches resource; same-organization FKs\\
+\code{consents} & 001/002 & Purpose-specific; append-only trigger\\
+\code{audit\_events} & 001 & Actor, actor type, subject, organization, action, decision, reason, correlation ID, metadata\\
+\code{submissions} & 002 & Composite FKs to course and membership in the same organization\\
+\code{provisioning\_requests} & 002 & Actor-scoped idempotency key with payload hash\\
+\code{policy\_rules} & 002 & Tenant allow/deny rows for Casbin\\
+\code{organization\_sso\_configs} & 003 & Unique email domain $\to$ broker alias per tenant\\
+\code{service\_principals} & 004/005 & Agent registry; unique \code{(issuer, client\_id)}; status; \code{delegable}\\
+\code{service\_principal\_grants} & 004 & Exact \code{(tenant, resource, action)} grants for AG01\\
+\code{agent\_delegations} & 005 & User $\to$ agent delegation; scopes; expiry; revocation; FK to membership\\
+\bottomrule
+\caption{Application database tables.}
+\end{longtable}
+
+\section{Commit history}
+\label{app:commits}
+\begin{longtable}{@{}P{1.5cm} P{2.6cm} P{9.8cm}@{}}
+\toprule
+\textbf{Commit} & \textbf{Date (IST)} & \textbf{Subject}\\
+\midrule
+\endhead
+\texttt{0d232ec} & 2026-10-02 21:58 & feat: add verified multi-tenant IAM prototype and mentor demo guide\\
+\texttt{b8a1e9c} & 2026-10-02 22:00 & docs: record published repository and verified source baseline\\
+\texttt{f68add3} & 2026-10-10 21:35 & fix: address all week 2 mentor feedback (P0/P1)\\
+\texttt{2f59524} & 2026-10-10 21:35 & docs: finalize progress report\\
+\texttt{f09977c} & 2026-10-10 21:38 & docs: add week 3 progress report\\
+\texttt{eb50d8b} & 2026-10-11 11:26 & docs: expand week 3 progress report; remove PDFs and unnecessary docs from git tracking\\
+\texttt{953a0aa} & 2026-10-15 18:36 & feat(clients): redesign demo UI and add presentation guide\\
+\texttt{5e4367a} & 2026-10-31 14:28 & fix(backend): restore suspended consent withdrawal, fatal startup config check, exact outage status\\
+\texttt{ece833d} & 2026-10-31 14:41 & feat(provisioning): tenant domain/SSO association; real adversarial fixtures; reliable mutation runner\\
+\texttt{42d8a43} & 2026-10-31 14:46 & feat(clients): runtime host configuration for browser clients, provider and API\\
+\texttt{0900f10} & 2026-10-31 14:57 & docs: publish 2026-10-31 evidence for 42d8a43, week 3 responses and week 4 report\\
+\texttt{feebd81} & 2026-10-31 17:33 & docs: record W3 submission (week 3 PDF uploaded 11 Oct, built from eb50d8b)\\
+\texttt{43051d8} & 2026-10-31 17:38 & docs: W3 upload time 11:32 IST, owners agreed\\
+\texttt{fde2efd} & 2026-11-07 11:17 & feat(agents): AG01 application service principal; dependency remediation\\
+\texttt{a6be5c9} & 2026-11-07 11:39 & docs: publish 2026-11-07 evidence for fde2efd (W5) and latency observation\\
+\texttt{853956d} & 2026-11-07 11:47 & docs: step-by-step physical phone run and recording guide\\
+\texttt{25196c2} & 2026-11-07 12:22 & docs: record physical phone run (Android Chrome over hotspot)\\
+\texttt{2a02456} & 2026-11-07 12:31 & docs: final project report source (W5 results, AG01, phone run)\\
+\texttt{e13f019} & 2026-11-14 20:42 & feat(agents): AG02 user-delegated agent with permission intersection\\
+\bottomrule
+\caption{Commit history up to the final verified code revision. Documentation and evidence commits after \texttt{e13f019} do not change backend, client, realm or script code.}
+\end{longtable}
+
+\section{Evidence files}
+\label{app:evidence}
+\begin{table}[H]
+\centering
+\small
+\begin{tabularx}{\textwidth}{@{}P{4.4cm} L@{}}
+\toprule
+\textbf{File} & \textbf{Contents}\\
+\midrule
+\code{clean-up.log} & Clone of \texttt{e13f019}, no volumes before start, healthy services, migrations and seed, teardown\\
+\code{clean-checks.log} & Typecheck, build, \code{npm audit}, client configuration\\
+\code{clean-full.log} & Complete suite with the live provider\\
+\code{clean-ag01.log}, \code{clean-ag02.log} & The two agent outcome commands\\
+\code{clean-mutation.log}, \code{mutation.json} & Mutation runner: baseline and 15 mutations\\
+\code{mutation-db-down.log} & Control: database stopped, runner must be inconclusive\\
+\code{clean-pkce.log} & Real-browser proof on \code{localhost}\\
+\code{pkce-127.0.0.1.log} & Browser proof and AG02 demo on the alternate host\\
+\code{latency.log} & Latency observation\\
+\bottomrule
+\end{tabularx}
+\caption{Evidence of the final run, in \code{docs/evidence/2026-11-14/}. Older runs are in the \code{2026-10-31} and \code{2026-11-07} folders next to it; \code{docs/verification-evidence.md} explains each run.}
+\end{table}
+
+\section{Glossary}
+\begin{description}[leftmargin=3.2cm, labelwidth=3.0cm, itemsep=1pt]
+  \item[Tenant] An organization using the platform (Acme, Globex); its data must stay separate.
+  \item[Membership] A user's link to a tenant, with a status and roles in that tenant.
+  \item[Principal] Anyone or anything that can call the API: a human user, an AG01 service principal or an AG02 delegated agent.
+  \item[Introspection] Asking the identity provider whether a token is still active.
+  \item[PKCE] Proof Key for Code Exchange: protects the login code of public clients.
+  \item[Deny-overrides] A policy effect where any matching deny wins over any number of allows.
+  \item[Hard boundary] A rule checked before the policy engine (tenant, ownership, published, teaching).
+  \item[Mutation] A deliberate, single change that breaks one security guard, used to check that tests notice.
+  \item[Killed / survived] A mutation is killed when the named tests fail with assertion errors; it survives when the tests still pass.
+  \item[Clean clone] A fresh \code{git clone} started with new Docker volumes, so nothing from earlier runs is reused.
+  \item[Delegation] A record that lets one agent act for one user in one tenant with a list of scopes until an expiry.
+\end{description}

@@ -1,0 +1,17 @@
+== AG01 command 2026-11-14T15:15:17Z
+
+ RUN  v5.0.3 /app
+
+stdout | tests/security/service-principal.test.ts > AG01 live: iam-agent-reporting client-credentials token against the running API > an already-issued token after the client is disabled: 401
+{"event":"service-principal-disable-evidence","firstRequestStatus":401,"delayMs":20,"newTokenError":"invalid_client"}
+
+ ✓ tests/security/service-principal.test.ts (30 tests) 4187ms
+   ✓ AG01 live: iam-agent-reporting client-credentials token against the running API (7)
+     ✓ an expired token: 401 3539ms
+
+ Test Files  1 passed (1)
+      Tests  30 passed (30)
+   Start at  15:15:17
+   Duration  4.60s (tests 93%, import 4%, transform 3%)
+
+exit 0

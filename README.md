@@ -2,10 +2,11 @@
 
 Repository: https://github.com/krishnateja2314/iam-provider
 
-Current verified code revision: `fde2efd` (clean clone, new volumes, 2026-11-07: 227 passed,
-0 failed, 0 skipped; mutation check 11/11 killed; browser proof 10/10; npm audit 0). Includes the
-AG01 application service principal ([ADR-003](docs/adr/ADR-003-service-principals.md)).
-Earlier: `42d8a43` (197 passed, 31 Oct), `0d232ec` (159 passed, 2 Oct).
+Current verified code revision: `e13f019` (clean clone, new volumes, 2026-11-14: 253 passed,
+0 failed, 0 skipped; mutation check 15/15 killed; browser proof 11/11 on two hosts; npm audit 0). Includes the
+AG01 application service principal ([ADR-003](docs/adr/ADR-003-service-principals.md)) and the AG02
+user-delegated agent ([ADR-004](docs/adr/ADR-004-delegated-agents.md)). Final report: `final_report.tex`.
+Earlier: `fde2efd` (227 passed, 7 Nov), `42d8a43` (197 passed, 31 Oct), `0d232ec` (159 passed, 2 Oct).
 
 Academic modular-monolith prototype for two synthetic learning organizations.
 Authentication is delegated to Keycloak; tenant membership, resource ownership,

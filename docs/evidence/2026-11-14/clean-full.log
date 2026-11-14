@@ -1,0 +1,71 @@
+== enable test client 2026-11-14T15:14:50Z
+Configured iam-enterprise; existing realm data preserved
+Configured iam-platform; existing realm data preserved
+Local password-grant test client ENABLED (explicit opt-in)
+== full suite 2026-11-14T15:14:53Z
+
+> iam-platform-backend@1.0.0 test
+> vitest run
+
+
+ RUN  v5.0.3 /app
+
+ ✓ tests/integration/api.test.ts (31 tests) 884ms
+stdout | tests/security/delegation.test.ts > AG02 live: iam-agent-assistant acting through a delegation against the running API > revoking the delegation denies the already-issued agent token on its next request (401)
+{"event":"delegation-revocation-evidence","firstRequestStatus":401,"delayMs":17}
+
+ ✓ tests/security/delegation.test.ts (26 tests) 1287ms
+stdout | tests/security/service-principal.test.ts > AG01 live: iam-agent-reporting client-credentials token against the running API > an already-issued token after the client is disabled: 401
+{"event":"service-principal-disable-evidence","firstRequestStatus":401,"delayMs":29,"newTokenError":"invalid_client"}
+
+ ✓ tests/security/service-principal.test.ts (30 tests) 4299ms
+   ✓ AG01 live: iam-agent-reporting client-credentials token against the running API (7)
+     ✓ an expired token: 401 3566ms
+stdout | tests/security/session-lifecycle.test.ts > Live Keycloak issued-token lifecycle > provider logout invalidates an already issued access token and refresh token
+{"event":"provider-revocation-evidence","operation":"provider-logout","firstRequestStatus":401,"delayMs":64,"maximumAllowedMs":5000}
+
+stdout | tests/security/session-lifecycle.test.ts > Live Keycloak issued-token lifecycle > own-session API revoke rejects a foreign session and invalidates only the owned issued token
+{"event":"provider-revocation-evidence","operation":"own-session-api-revoke","firstRequestStatus":401,"delayMs":60,"maximumAllowedMs":5000}
+
+stdout | tests/security/session-lifecycle.test.ts > Live Keycloak issued-token lifecycle > admin logout-all invalidates issued user session tokens
+{"event":"provider-revocation-evidence","operation":"admin-logout-all","firstRequestStatus":401,"delayMs":33,"maximumAllowedMs":5000}
+
+stdout | tests/security/session-lifecycle.test.ts > Live Keycloak issued-token lifecycle > genuine admin password reset replaces credentials but leaves current sessions valid (routine reset)
+{"event":"password-reset-evidence","oldCredentialsAccepted":false,"newCredentialsAccepted":true,"previouslyIssuedAccessTokenStatus":200}
+
+stdout | tests/security/session-lifecycle.test.ts > Live Keycloak issued-token lifecycle > genuine admin password reset replaces credentials but leaves current sessions valid (routine reset)
+{"event":"provider-revocation-evidence","operation":"admin-logout-all","firstRequestStatus":401,"delayMs":174,"maximumAllowedMs":5000}
+
+stdout | tests/security/session-lifecycle.test.ts > Live Keycloak issued-token lifecycle > refresh rotation rejects reuse and invalidates successor refresh and issued access tokens
+{"event":"refresh-reuse-evidence","reusedRefreshStatus":400,"successorRefreshStatus":400,"successorIssuedAccessTokenStatus":401}
+
+stdout | tests/security/session-lifecycle.test.ts > Live Keycloak issued-token lifecycle
+{"event":"maximum-observed-revocation-delay","delayMs":174,"samples":4}
+
+ ✓ tests/security/session-lifecycle.test.ts (21 tests) 6669ms
+   ✓ Live Keycloak issued-token lifecycle (6)
+     ✓ own-session API revoke rejects a foreign session and invalidates only the owned issued token 353ms
+     ✓ expired refresh session is rejected and its issued access token becomes inactive 5099ms
+ ✓ tests/security/provisioning-privacy.test.ts (9 tests) 318ms
+ ✓ tests/security/tenant-sso.test.ts (10 tests) 590ms
+   ✓ Live Keycloak: newly provisioned tenant routes to its configured enterprise broker (3)
+     ✓ control: without the hint the platform login page is served (no broker redirect) 346ms
+ ✓ tests/security/t10-audit.test.ts (6 tests) 58ms
+ ✓ tests/security/t03-t04-t09-token-validation.test.ts (41 tests) 185ms
+ ✓ tests/security/startup-config.test.ts (12 tests) 1344ms
+   ✓ server entry point (subprocess) (2)
+     ✓ production with KEYCLOAK_INTROSPECTION=false exits 1 before listening 679ms
+     ✓ positive control: the same entry point with safe production config listens and answers /health 655ms
+ ✓ tests/security/t05-t08-authorization.test.ts (59 tests) 265ms
+ ✓ tests/security/t01-t02-identity-membership.test.ts (8 tests) 34ms
+
+ Test Files  11 passed (11)
+      Tests  253 passed (253)
+   Start at  15:14:54
+   Duration  18.80s (tests 89%, import 8%, transform 2%, setup 1%)
+
+exit 0
+== disable test client
+Configured iam-enterprise; existing realm data preserved
+Configured iam-platform; existing realm data preserved
+Local password-grant test client disabled

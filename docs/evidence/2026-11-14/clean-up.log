@@ -1,0 +1,50 @@
+clone of e13f01903f7a53676dd7abd42b6269e0d8c495f6 at 2026-11-14T15:13:25Z
+.
+..
+.env.example
+.git
+.gitattributes
+.gitignore
+README.md
+backend
+clients
+docker-compose.yml
+docs
+final_report.tex
+infrastructure
+scripts
+week3_progress_report.tex
+week4_progress_report.tex
+no iam-finalclean volumes before start
+== up 2026-11-14T15:13:25Z
+ Container iam-finalclean-backend-1 Starting 
+ Container iam-finalclean-backend-1 Started 
+ Container iam-finalclean-backend-1 Waiting 
+ Container iam-finalclean-clients-1 Waiting 
+ Container iam-finalclean-postgres-1 Waiting 
+ Container iam-finalclean-keycloak-db-1 Waiting 
+ Container iam-finalclean-keycloak-1 Waiting 
+ Container iam-finalclean-postgres-1 Healthy 
+ Container iam-finalclean-keycloak-db-1 Healthy 
+ Container iam-finalclean-clients-1 Healthy 
+ Container iam-finalclean-keycloak-1 Healthy 
+ Container iam-finalclean-backend-1 Healthy 
+== healthy 2026-11-14T15:14:33Z
+backend Up 5 seconds (healthy)
+clients Up 58 seconds (healthy)
+keycloak Up 52 seconds (healthy)
+keycloak-db Up 58 seconds (healthy)
+postgres Up 58 seconds (healthy)
+backend-1  | > iam-platform-backend@1.0.0 migrate
+backend-1  | > tsx src/db/migrate.ts
+backend-1  | Migrations completed successfully.
+backend-1  | > iam-platform-backend@1.0.0 seed
+backend-1  | > tsx src/db/seed.ts
+backend-1  | Connected to database. Running seed...
+backend-1  | Seed data inserted successfully.
+backend-1  | {"level":30,"time":1794669270423,"pid":101,"hostname":"6c2f65c34d8b","msg":"Server listening at http://127.0.0.1:3100"}
+backend-1  | {"level":30,"time":1794669270424,"pid":101,"hostname":"6c2f65c34d8b","msg":"Server listening at http://172.24.0.6:3100"}
+== teardown 2026-11-14T15:23:47Z
+ Volume iam-finalclean_pgdata Removed 
+ Network iam-finalclean_default Removed 
+ Volume iam-finalclean_keycloak-pgdata Removed 

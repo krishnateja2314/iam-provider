@@ -1,0 +1,383 @@
+\section{Mistakes, issues, problems and fixes}
+\label{sec:mistakes}
+
+This section is a complete record of what went wrong during the project and what we did about it. We include mistakes in design, code, tests, evidence, reporting and process, whether they were made by us, by the AI coding agent we used, or came from surprises in the tools. Each entry states what happened, how it was found, the root cause, the fix, the evidence for the fix, and the lesson.
+
+We write this section in detail for two reasons. First, the mentor reviews showed that our most serious problems were not in the code that enforced security but in the \emph{evidence} that claimed it worked; an honest record is part of the evidence. Second, several lessons only became clear when we saw the same kind of mistake twice.
+
+\subsection{Overview}
+\begin{longtable}{@{}P{0.75cm} P{6.0cm} P{1.6cm} P{2.3cm} P{2.3cm}@{}}
+\toprule
+\textbf{\#} & \textbf{Issue} & \textbf{When} & \textbf{Kind} & \textbf{Status}\\
+\midrule
+\endhead
+\multicolumn{5}{@{}l}{\emph{Design and scope}}\\
+1 & Week~0 proposal far too large (8 services, own OIDC server, full SCIM) & W0 & design & changed in W1\\
+2 & Security testing planned for the end & W0 & process & changed in W1\\
+3 & User-to-agent delegation promised in W1, deferred for five weeks & W1--W5 & scope & built (final)\\
+\multicolumn{5}{@{}l}{\emph{Implementation and integration (Week 2)}}\\
+4 & Keycloak did not import realm files whose names did not match & W2 & tool & fixed\\
+5 & Keycloak 26 tokens had no \code{sub} without the \code{basic} scope & W2 & tool & fixed\\
+6 & Lifecycle tests introspected with a client that was not the audience & W2 & test & fixed\\
+7 & Refresh failed because refreshed ID tokens may omit the nonce & W2 & code & fixed\\
+8 & Fresh seed violated a new consent constraint & W2 & code & fixed\\
+9 & Test expected a JSON number for a NUMERIC grade (and again in the final week) & W2, final & test & fixed\\
+10 & Playwright's Chromium download timed out & W2 & tool & worked around\\
+11 & We assumed a password reset revokes sessions; it does not & W2 & assumption & documented\\
+\multicolumn{5}{@{}l}{\emph{Week 2 review}}\\
+12 & Repository returned 404 to the mentor & W2 & process & fixed\\
+13 & Introspection could be switched off by a flag & W2 & code & fixed\\
+14 & Tenant guards not visibly central; no third-tenant or substitution tests & W2 & code/test & fixed (caused \#18)\\
+15 & Hard-coded constants; combined lifecycle assertions & W2 & code/test & fixed\\
+16 & No proof that the tests could fail & W2 & test & fixed in W4\\
+17 & Written answers overstated what had been run & W2--W3 & evidence & corrected in W4\\
+\multicolumn{5}{@{}l}{\emph{Week 3 review}}\\
+18 & Central-guard refactor broke consent withdrawal under suspension & W3 & regression & fixed (late)\\
+19 & Unsafe configuration checked only per request; \code{/health} still answered & W3 & code & fixed\\
+20 & Mutation script reported success on any error & W3 & test & rewritten\\
+21 & Substitution test used a course ID as a submission ID & W3 & test & rewritten\\
+22 & Provider outage returned 401, not 503; a test passed \code{sid} where it was ignored; tests not typechecked & W3 & code/test & fixed\\
+23 & ``159 passed'' reported for a revision it did not apply to & W3 & evidence & corrected\\
+24 & M5 had no tenant-to-domain-to-SSO link & W3 & scope & built\\
+25 & Client hosts hard-coded & W3 & code & fixed\\
+26 & Evaluation protocol frozen one day late; Week~3 report late & W3 & process & not met (recorded)\\
+\multicolumn{5}{@{}l}{\emph{Weeks 4 and 5}}\\
+27 & \code{npm audit} went from 0 to 4 advisories without any code change & W4 & dependency & fixed in W5\\
+28 & First database-down control stopped the backend too & W5 & test & redone\\
+29 & Re-enabling a Keycloak client revives its unexpired tokens & W5 & tool & documented, tested\\
+30 & Host-side latency dominated by Docker port forwarding & W5 & measurement & measured in container\\
+31 & Phone login failed over plain HTTP (\code{crypto.subtle} needs a secure context) & W5 & platform & worked around\\
+32 & Phone run reassigned; second-machine rerun not done & W5 & process & open\\
+33 & Week~4 review never arrived & W5 & process & own plan executed\\
+34 & A performance improvement promised in W2 was never done & W2--W5 & scope & corrected\\
+\multicolumn{5}{@{}l}{\emph{Final week}}\\
+35 & Tenant binding of a delegation cannot be mutation-tested alone & final & test & stated honestly\\
+36 & Tooling: shell heredocs dropped backslashes; Windows line endings & final & tool & worked around\\
+\bottomrule
+\caption{Overview of mistakes, issues and problems.}
+\label{tab:mistakes}
+\end{longtable}
+
+\subsection{Design and scope}
+\label{sec:mistakes-design}
+
+\issue{1. The Week~0 proposal was far too large}
+{We proposed eight components that could each become a service, our own OIDC-capable authentication service, a Zanzibar-style ReBAC engine, a broad SCIM interface, and agent delegation, all in eight weeks for two students.}
+{Week~0 mentor review.}
+{We started from the full problem space instead of from the security properties we had to prove. We underestimated how much time distributed deployment, networking and a custom authorization server would consume.}
+{Week~1 redesign: one modular monolith, Keycloak for authentication, Casbin plus database facts for authorization, a minimal provisioning slice, agents as an extension.}
+{Week~1 design report; Table~\ref{tab:progress}.}
+{Cut infrastructure, not security goals. The time we saved went into tests that tried to break the system, which turned out to be where the real problems were.}
+
+\issue{2. Security testing was planned for the end}
+{The Week~0 plan put most security testing in the final phase.}
+{Week~0 mentor review.}
+{We thought of tests as validation of a finished system rather than as part of each feature.}
+{From Week~1, each milestone came with its own tests. By the first working version (Week~2) there were already 159 tests.}
+{Table~\ref{tab:progress}.}
+{Tests written with the feature found integration problems (Section~\ref{sec:mistakes-w2}) while they were still cheap to fix.}
+
+\issue{3. User-to-agent delegation was promised and then deferred for five weeks}
+{The Week~1 design put ``agent principals and user to agent delegation'' inside the scope, listed invariant~7 and scenarios 13--14, and planned delegation for Week~5. The Week~3, 4 and 5 reports each listed it as pending or future work, and the first draft of this final report (7 November) said ``AG02: not built''.}
+{Our own review of what had been promised, at the start of the final week.}
+{The mandatory milestones and the evidence problems found in the reviews took priority, which was the right order. But we never formally closed or re-scoped the promise; it simply kept moving.}
+{Built AG02 in the final week (Section~\ref{sec:agents}, ADR-004, commit \texttt{e13f019}) with 26 tests, four mutations, a browser step and a demo.}
+{Section~\ref{sec:results}.}
+{A promise in a design document should either be delivered or explicitly withdrawn with a reason. Carrying it as ``future work'' every week is a silent scope change.}
+
+\subsection{Implementation and integration problems (Week 2)}
+\label{sec:mistakes-w2}
+These six problems were found while verifying the first complete version on 2 October. None of them was fixed by relaxing a security check.
+
+\issue{4. Keycloak ignored realm files whose names did not match the realm}
+{On a fresh start Keycloak came up without our realms.}
+{First-start test with new volumes.}
+{Keycloak's directory import expects each file to be named after the realm it contains (\code{<realm>-\allowbreak realm.json}).}
+{Renamed the files to \code{iam-platform-realm.json} and \code{iam-enterprise-realm.json}.}
+{Every later clean start imports both realms (for example \code{clean-up.log} of the final run).}
+{Test the first start from nothing, not only a warm developer stack.}
+
+\issue{5. Keycloak 26 access tokens had no \code{sub} claim}
+{Our validator rejected tokens because \code{sub} was missing.}
+{Live login tests.}
+{In Keycloak 26 the subject mapper lives in the \code{basic} client scope, which our clients did not include.}
+{Added \code{basic} to the clients' default scopes. We did \emph{not} remove \code{sub} from the required claims.}
+{Token-validation tests require \code{sub}; live tokens pass.}
+{When a security check fails against a real provider, fix the configuration, not the check.}
+
+\issue{6. Lifecycle tests introspected with the wrong client}
+{The first live lifecycle tests called introspection with a client that was not the token's audience, so results did not match what the API saw.}
+{Inconsistent live-test results.}
+{We picked a convenient client instead of the backend's own credentials.}
+{Tests now introspect with \code{iam-backend}, exactly as the API does.}
+{\code{session-lifecycle.test.ts}.}
+{A test must use the same path and credentials as production, or it tests something else.}
+
+\issue{7. Token refresh failed in the browser client}
+{After a refresh the client rejected the new ID token and dropped the session.}
+{Manual testing and the browser proof.}
+{The client required a nonce on every ID token, but OIDC allows a refreshed ID token to omit it.}
+{The initial login requires and checks the nonce. A refresh checks the nonce only if present, and requires the same subject, issuer and audience.}
+{Browser proof: ``refresh rotation and old refresh token reuse rejection''.}
+{Read the specification for edge cases instead of assuming every token looks like the first one.}
+
+\issue{8. The fresh seed violated a new consent constraint}
+{Seeding a new database failed after we tightened consent purposes.}
+{First-start test with new volumes.}
+{The seed still used a legacy purpose value.}
+{The seed now starts with a denied \code{analytics} consent that satisfies the constraint.}
+{Every clean start seeds successfully.}
+{Run the seed against the current schema in CI-like conditions after every schema change.}
+
+\issue{9. A test expected a number for a NUMERIC grade (twice)}
+{A grading test compared the stored grade with a JSON number, but PostgreSQL \code{NUMERIC} values arrive as decimal strings. We made the same mistake again in the final week when writing the AG02 instructor-grading test (\code{"77"} versus \code{77}).}
+{Test failure (2 October; again on 14 November in the first AG02 run).}
+{JavaScript's \code{pg} driver returns \code{NUMERIC} as a string to avoid losing precision; we forgot this both times.}
+{Compare numerically (\code{Number(row.grade)}) in the test. The application still stores and returns the exact value.}
+{\code{delegation.test.ts} case 8 passes.}
+{A mistake that has been fixed once can be made again in new code; the lesson needs to be in a checklist or helper, not only in memory.}
+
+\issue{10. Playwright could not download Chromium}
+{The browser proof could not start because the Chromium download from the CDN timed out.}
+{Running \code{verify-pkce.mjs}.}
+{Network limits on the download host.}
+{Use the installed Microsoft Edge through Playwright's \code{msedge} channel, selected with the environment variable \code{IAM\_BROWSER\_CHANNEL}.}
+{All browser-proof logs record Edge.}
+{Prefer a browser that is already installed for local evidence; record which browser was used.}
+
+\issue{11. We assumed a password reset revokes existing sessions}
+{We expected a Keycloak password reset to invalidate already-issued tokens. The live test showed the old password rejected and the new one accepted, but an already-issued access token still returned 200.}
+{Live lifecycle test written to check the assumption.}
+{A password reset changes credentials for future logins; it does not end sessions.}
+{Documented the incident procedure: a reset must be followed by an explicit \code{logout-all}. The test records the observed behaviour instead of asserting our assumption.}
+{In every live run: old password rejected, new password accepted, already-issued access token still \textbf{200}.}
+{Write a test for every security assumption about an external system; several of ours were wrong.}
+
+\subsection{Findings of the Week~2 review}
+
+\issue{12. The mentor could not open our repository}
+{The repository link returned 404 for the mentor.}
+{Week~2 review (priority P0).}
+{The code had not been pushed to a public remote; we had checked only our local clone.}
+{Pushed to \url{https://github.com/krishnateja2314/iam-provider} and recorded the published baseline commit (\texttt{b8a1e9c}). Removed generated PDFs and unneeded documents from tracking (\texttt{eb50d8b}).}
+{Repository public; every later report names commits that exist there.}
+{``It works on my machine'' includes ``it exists on my machine''. Check access from outside.}
+
+\issue{13. Introspection could be turned off by a flag}
+{\code{KEYCLOAK\_INTROSPECTION=false} disabled the revocation check in any environment.}
+{Week~2 review (P0).}
+{The flag was added for fixture tests and never restricted.}
+{Introspection defaults to on, and disabling it is allowed only when \code{NODE\_ENV=test}. In Week~4 this check moved before \code{listen()} (issue 19).}
+{\code{startup-config.test.ts}; mutation M5.}
+{Every test-only switch is a production risk unless the code refuses it outside tests.}
+
+\issue{14. Tenant guards were not visibly central}
+{Each route attached its own checks, and nothing showed that an unseeded tenant or a substituted resource ID would be refused.}
+{Week~2 review (P0).}
+{Routes had grown one by one.}
+{All tenant routes use one shared hook list. Tests were added for an unseeded third tenant and for header/resource-ID substitution. This change later caused regression~18.}
+{\code{api.test.ts}; mutation M1.}
+{Centralising guards is right, but every exception to the central rule must be listed and tested before the refactor.}
+
+\issue{15. Hard-coded constants and combined lifecycle assertions}
+{URLs and service names were literals; one lifecycle test asserted several things at once, so a failure did not say which property broke.}
+{Week~2 review (P1).}
+{Prototype shortcuts.}
+{Constants moved to environment variables (\code{CORS\_ORIGIN}, \code{SERVICE\_NAME} and others); lifecycle assertions split into reuse rejection, successor refresh rejection and successor access rejection.}
+{\code{session-lifecycle.test.ts}: replayed refresh token 400, its successor refresh token 400, and the successor access token 401.}
+{One assertion per property makes failures diagnosable.}
+
+\issue{16. No proof that our tests could fail}
+{The mentor asked us to show that our tests would catch a broken guard.}
+{Week~2 review (P1).}
+{We had only ever seen the tests pass.}
+{Week~3: a first mutation script. It turned out to be broken (issue 20). Week~4: a rewritten runner with a strict contract (Section~\ref{sec:mutation}). Final: 15 mutations.}
+{Table~\ref{tab:mutations}.}
+{A green test suite is only evidence if it has been seen to go red for the right reason.}
+
+\issue{17. Our written answers overstated what had been run}
+{In our Week~2 answers we wrote that a clean clone had been verified; in fact the first-start run used the build context, not a \code{git clone}. We wrote that an introspection timeout gives ``503 or 401'', tested in \code{token-validator.test.ts}; that file did not exist, and the actual status was 401. The Week~3 report repeated that timeouts gave 503 and described the first mutation script as proving test independence.}
+{Our own re-reading during Week~4, prompted by the Week~3 review.}
+{We wrote answers from memory and intention (``what the code is supposed to do'') instead of from logs, and some text came from AI-generated drafts that we did not check against the repository.}
+{Published corrections in \code{docs/mentor-responses.md}. From Week~4, every claim in a report comes from a log of a clean clone of a named commit.}
+{\code{docs/mentor-responses.md} (``Corrections to our Week~2 answers'').}
+{Never describe a result you did not just observe. ``Should'' and ``does'' are different words.}
+
+\subsection{Findings of the Week~3 review}
+\label{sec:mistakes-w3}
+
+\issue{18. The central-guard refactor broke consent withdrawal under suspension}
+{After issue 14, \code{POST /consents} sat behind the active-only tenant hook, which returned 403 before the privacy service's deliberate exception (a suspended member may still withdraw their own consent) could run.}
+{The Week~3 reviewer found it by reading the code. We confirmed it by rerunning the Week~3 head on a real database: 160 passed, \textbf{1 failed}, 6 skipped; the failure was the existing consent test (\code{expected 403 to be 200}).}
+{The refactor applied one rule to all tenant routes and forgot a documented exception. Our ``159 passed'' result came from an older revision (issue 23), so the failing test was never run on the refactored code before we reported.}
+{A dedicated \code{ownMembershipHook} for this one route: it validates the untrusted selector, requires a membership row in that tenant (foreign and unknown tenants still get 403), admits suspension, and only \code{granted:false} skips \code{permit()}. A new test covers organization and membership suspension, grant denial, a foreign tenant, an unknown tenant, the appended history and the audit row. Fixed on 31 October (\texttt{5e4367a}), after the proposed due date of 19--23 October.}
+{Both consent tests pass; mutation M4 reverts the hook and is killed.}
+{A refactor of security guards needs the full suite on a real database before it is reported, and documented exceptions need tests that fail if the exception disappears.}
+
+\issue{19. Unsafe configuration was checked only per request}
+{With production settings and introspection disabled, the server still started and answered \code{/health}; the check ran only inside token validation.}
+{Week~3 review (P1); the reviewer started the server with unsafe settings.}
+{Validation lived in the request path, not at startup.}
+{\code{config.ts} validates before \code{listen()} and exits with code 1. A subprocess test asserts the exit code, the message, no ``ready'' log, and that the port refuses connections, with a positive control. The production image was checked the same way.}
+{\code{startup-config.test.ts} (12 cases); mutation M5.}
+{Fail at startup when the configuration is unsafe, not at the first request.}
+
+\issue{20. The first mutation script reported success on any error}
+{The Week~3 script treated any error from the test command as ``tests failed, mutation caught''. With the database stopped it still printed SUCCESS.}
+{Week~3 review (P1); the reviewer stopped the database and ran it.}
+{The script did not distinguish assertion failures from infrastructure failures, did not check that the mutation was applied, and did not check that the container ran the same source.}
+{Complete rewrite with the contract of Section~\ref{sec:mutation}: source hash check, clean baseline, named expected tests, exact-once anchors, assertion-only kills, \textsc{inconclusive} with exit 2.}
+{With the database stopped the runner reports \textsc{inconclusive baseline} and exits 2 (\code{mutation-db-down.log} in every run since Week~4).}
+{A checker must be checked: run it once where it must fail.}
+
+\issue{21. An adversarial test could never fail}
+{The ``foreign submission'' test used a course UUID from Globex as a submission ID. No submission has that ID, so the request was refused for the wrong reason and the test passed vacuously.}
+{Week~3 review (P1).}
+{The fixture was chosen for convenience; nobody checked that the attacked object existed.}
+{The test now creates a real Globex submission through the API, proves its owner can read it (200), then attacks the same ID through the Acme selector as an Acme administrator and an Acme instructor: 404 on read and grade, absent from the list, grade unchanged. A Globex administrator grading it (200) is the positive control.}
+{\code{api.test.ts}; mutation M3 (removing the tenant filter on the submission lookup) is killed by exactly this test.}
+{An attack test needs a positive control that proves the attacked object exists and is reachable by its rightful owner.}
+
+\issue{22. A provider outage returned 401, and a test hid it}
+{When Keycloak was unreachable, the API answered 401 (``invalid credential'') instead of 503 (``cannot verify''). The test accepted either status. Another test passed \code{sid} at the top level of the token options, where \code{createTestToken} ignores it, so it did not test what it claimed. Test files were not typechecked, which hid that mistake.}
+{Week~3 review (P1).}
+{One error type was used for both cases, the assertion was loose, and \code{npm run typecheck} covered only source files.}
+{A separate \code{DependencyError} that maps to exactly 503 \code{DEPENDENCY\_UNAVAILABLE}; inactive credentials stay 401. Tests assert the exact status and that \code{fetch} was called once. \code{sid} moved under \code{claims}. Typecheck now covers the tests too.}
+{\code{api.test.ts} and \code{session-lifecycle.test.ts}; mutation M6.}
+{Loose assertions (``503 or 401'') hide bugs; typecheck test code as strictly as source code.}
+
+\issue{23. A result was reported for a revision it did not apply to}
+{The ``159 passed'' result of 2 October (revision \texttt{0d232ec}) was repeated as current while the code had changed. At the later head the suite actually had one failure (issue 18).}
+{Week~3 review (FB003); confirmed by our rerun of \texttt{953a0aa}.}
+{We treated a result as a property of the project instead of a property of one revision.}
+{\code{docs/verification-evidence.md} became a dated log in which every section names the exact revision. Every report from Week~4 uses a fresh clean-clone run.}
+{The evidence log and this report.}
+{A test result belongs to a commit and a date. Without both it is a rumour.}
+
+\issue{24. M5 had no link from a tenant to its domain and SSO broker}
+{Organizations could be provisioned, and the enterprise broker existed, but nothing said which tenant's users should use which broker.}
+{Week~3 review (P1).}
+{We had implemented federation (how to talk to the upstream provider) but not the tenant association (who is routed where).}
+{Migration 003 and an optional \code{sso} object in provisioning, written in the same transaction; public discovery returns the alias for \code{kc\_idp\_hint}; a tenant-admin view. A live test shows Keycloak redirecting into the enterprise realm.}
+{\code{tenant-sso.test.ts} (10 cases, 3 live).}
+{``Federation configured'' and ``tenant onboarded to federation'' are different requirements.}
+
+\issue{25. Client hosts were hard-coded}
+{The browser client contained \code{localhost} literals, so a phone on the LAN could not use it without editing source.}
+{Week~3 review (P1).}
+{Development shortcut.}
+{One setting, \code{IAM\_PUBLIC\_HOST}, drives the provider host name, the backend issuer and CORS, the client's \code{/config.js} and its CSP; the Keycloak updater adds matching redirect URIs.}
+{\code{verify-client-config.mjs} (9 checks); the full browser proof on \code{127.0.0.1}; the phone run.}
+{Configuration that differs between environments belongs in one place.}
+
+\issue{26. The evaluation protocol was frozen late, and the Week~3 report was late}
+{The mentor asked us to freeze the acceptance criteria by 9 October. Our protocol was written and committed on 10 October (\texttt{f68add3}, 21:35 IST). The Week~3 report was uploaded on 11 October at 11:32 IST.}
+{Week~3 review (FB004); confirmed from git history and the Drive upload time.}
+{We started the Week~3 work too close to the deadline.}
+{We did not backdate anything. We added a timeline note to the protocol, left its criteria unchanged, and reported the criterion as \textbf{not met}.}
+{\code{docs/evaluation-protocol.md}; \code{docs/mentor-responses.md}, answer 5.}
+{When a deadline is missed, record it plainly; changing dates or criteria afterwards would destroy the value of the freeze.}
+
+\subsection{Weeks 4 and 5}
+
+\issue{27. \code{npm audit} went from 0 to 4 advisories without a code change}
+{On 2 October \code{npm audit} reported 0 vulnerabilities. On 31 October the same pinned dependencies had four advisories: \code{fastify} 5.12.5 (header-validation bypass), \code{fast-uri} (scheme injection), and \code{minimatch} (denial of service) via \code{casbin}.}
+{Clean-clone checks of Week~4.}
+{New advisories were published for versions we already used. An audit result is a snapshot in time.}
+{Not fixed in Week~4 (it would have invalidated that week's evidence); fixed first thing in Week~5: \code{fastify} 5.12.8, a lockfile refresh for \code{fast-uri}, and an override to \code{minimatch} 11.0.5. \code{npm audit fix --force} would have \emph{downgraded} Casbin from 5.51.1 to 5.24.4, so we refused it and checked that all 59 authorization cases and the Casbin deny mutation still pass. A new \code{vite} advisory (test tooling) was fixed by a lockfile refresh.}
+{\code{npm audit}: 0 at \texttt{fde2efd} and at the final revision.}
+{Report audit results with a date. Read what an automatic ``fix'' will change before running it.}
+
+\issue{28. The first database-down control tested the wrong thing}
+{To check that the new runner reports \textsc{inconclusive}, we first ran \code{docker compose stop postgres}. Compose also stopped the backend, which depends on the database, so the run only proved ``backend not running''.}
+{Reading the log of the control run in Week~5.}
+{Compose stops dependants with their dependency.}
+{The recorded control stops only the database container (\code{docker stop} on the \code{postgres} container of the project).}
+{\code{mutation-db-down.log} of Week~5 and of the final run.}
+{A control experiment must change exactly one thing.}
+
+\issue{29. Re-enabling a Keycloak client revives its unexpired tokens}
+{After we disabled the AG01 client, its token was correctly refused (401). After re-enabling the client, the same unexpired token was accepted again.}
+{AG01 live tests.}
+{Keycloak's introspection reflects the client's current state; the token itself was never revoked.}
+{Not a defect in our code. Documented in ADR-003: to keep an agent off, set its registry row to \code{disabled}, which our backend checks on every request (tested; mutation M8).}
+{\code{service-principal.test.ts}.}
+{``Disabled'' at the provider is not the same as ``revoked''; keep an application-side switch for principals that must stay off.}
+
+\issue{30. Host-side latency measured Docker, not our code}
+{Measured from the Windows host, every request, including the unauthenticated \code{/health}, took about 15\,ms.}
+{First latency measurements in Week~5.}
+{Docker Desktop's port forwarding adds a fixed cost on Windows.}
+{\code{measure-latency.mjs} runs inside the backend container and reports \code{/health}, introspection alone and a full agent request separately.}
+{\code{latency.log}: \code{/health} p50 below 1\,ms inside the container.}
+{Measure as close to the system under test as possible and include a baseline series that should be near zero.}
+
+\issue{31. The phone could not log in over plain HTTP}
+{On the phone the login button did nothing.}
+{Physical phone run, 7 November.}
+{The client computes the PKCE challenge with \code{crypto.subtle}, which browsers provide only in a secure context (HTTPS, \code{localhost} or \code{127.0.0.1}). A plain-HTTP page on a LAN address is not one.}
+{For the lab, Chrome's ``insecure origins treated as secure'' flag for the three lab addresses; documented step by step in the demo guide. A real deployment needs HTTPS. iPhone Safari has no such flag and was not tested.}
+{\code{docs/evidence/2026-11-07/phone-run.md}: all ten steps as expected, including Globex members 403 for Alice and Acme members 403 for the brokered enterprise user.}
+{Test on a real device early; browsers treat \code{localhost} specially, so desktop tests can hide this.}
+
+\issue{32. The phone run was reassigned, and the second-machine rerun was not done}
+{The Week~4 plan assigned both the physical phone run and an independent rerun on a second machine to Jaya Prakash. On 7 November the phone run was done by Krishna Teja instead. The independent rerun on a second machine has not been done.}
+{Week~5 status review.}
+{Time and coordination within the team.}
+{The reassignment is stated in the Week~5 report and in \code{phone-run.md}. The missing rerun is listed as a limitation; all our evidence comes from one Windows machine.}
+{Section~\ref{sec:limitations}.}
+{Independent reproduction needs to be scheduled as early as feature work, not left to the last week.}
+
+\issue{33. The Week~4 review never arrived}
+{By 7 November we had no review of the Week~4 report.}
+{---}
+{Outside our control.}
+{We executed the plan written in Section~7 of the Week~4 report exactly, with its stated command and expected results, and said so in the Week~5 report.}
+{Week~5 report; AG01 expected-versus-observed table.}
+{Writing the next week's plan with concrete commands and expected results made it possible to proceed without new feedback.}
+
+\issue{34. A performance improvement was promised but never done}
+{Our answer to Week~2 question~7 described a planned performance \emph{improvement} (indexes and batched queries, measured against a frozen baseline).}
+{Our own review in Week~5.}
+{It was optional and was always behind correctness work.}
+{We did not claim it. Week~5 added only a latency \emph{observation} of the unchanged request path, and we corrected the earlier answer in \code{docs/mentor-responses.md}.}
+{Section~\ref{sec:latency}.}
+{An optional item that is not done should be reported as not done, not quietly dropped.}
+
+\subsection{Final week}
+
+\issue{35. The tenant binding of a delegation cannot be mutation-tested alone}
+{We wanted a mutation for ``a delegation may be used only in its own tenant''. Removing that check in the tenant hook leaves the same check in \code{authorize()}, and vice versa, so a single-point mutation would survive.}
+{Designing mutations M12--M15.}
+{Deliberate defence in depth: the check exists in two layers.}
+{We kept both checks and did not add a mutation that would survive. The property is tested functionally (Alice's Acme delegation refused in Globex; live case L3). Section~\ref{sec:agents} states this.}
+{\code{delegation.test.ts}.}
+{Redundant guards are good for security but invisible to single-point mutation testing; say so rather than claim coverage.}
+
+\issue{36. Tooling problems while writing code with the AI agent}
+{In this Windows environment, shell here-documents written by the agent dropped backslashes (a \code{\textbackslash n} in a JavaScript template string vanished; the edit script's own assertion caught it before anything was written). Files rewritten by Python on Windows came back with CRLF line endings, while the repository stores LF.}
+{An assertion in the agent's own edit script failed; \code{git ls-files --eol} showed \code{w/crlf}.}
+{Shell quoting rules in Git Bash on Windows, and Python's text-mode newline translation.}
+{Edits containing backslashes are done through script files written with an editor tool rather than here-documents; edited files were normalised to LF before committing (the repository's \code{.gitattributes} enforces LF).}
+{The committed files are LF; the mutation runner's byte-for-byte source check passed in the final run.}
+{Small tooling problems can corrupt code silently; an edit should verify itself (our edit scripts assert that each change applied).}
+
+\subsection{Mistakes made by the AI coding agent}
+Much of the code, tests and documentation was written with an AI coding agent (Claude Code) working in our repository under our direction. Validation on real infrastructure found the following mistakes in its work. We list them separately because they show which kinds of errors such tools make and which checks catch them.
+\begin{itemize}
+  \item \textbf{A checker that could not fail}: the first mutation script reported success on any error (issue 20).
+  \item \textbf{A vacuous attack test}: a course ID used as a submission ID (issue 21).
+  \item \textbf{A test option in the wrong place}: \code{sid} passed where it was ignored, hidden because tests were not typechecked (issue 22).
+  \item \textbf{A refactor that removed a documented exception}: the central-guard change broke consent withdrawal (issue 18).
+  \item \textbf{Overstated written answers}: claims of a clean-clone run that had not happened and of a test file that did not exist (issue 17).
+  \item \textbf{A repeated type mistake}: NUMERIC compared with a number, in Week~2 and again in the final week (issue 9).
+  \item \textbf{Shell edits that lost characters} (issue 36).
+\end{itemize}
+What caught them was always the same: running the real system from a clean state, reading the actual logs, mutation testing, and a reviewer who reran things. Reading the generated code alone did not catch any of them.
+
+\subsection{Issues that remain open}
+\begin{itemize}
+  \item No independent rerun on a second machine (issue 32).
+  \item The evaluation-protocol freeze criterion (FB004) was not met (issue 26), and the Week~3 consent fix was delivered after its proposed due date (issue 18). These cannot be fixed after the fact.
+  \item The limitations in Section~\ref{sec:limitations}, which are deliberate scope boundaries rather than mistakes.
+\end{itemize}

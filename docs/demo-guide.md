@@ -341,7 +341,7 @@ try {
 }
 ```
 
-**Verified result (`fde2efd`, clean clone, 2026-11-07):** 227 passed, 0 failed, 0 skipped, 10 files. (31 Oct, `42d8a43`: 197; 2 Oct, `0d232ec`: 159.) Check the actual current
+**Verified result (`e13f019`, clean clone, 2026-11-14):** 253 passed, 0 failed, 0 skipped, 11 files. (7 Nov, `fde2efd`: 227; 31 Oct, `42d8a43`: 197; 2 Oct, `0d232ec`: 159.) Check the actual current
 output before making that claim in a new environment. If configuration fails, do
 not claim the live tests ran. If disabling fails, rerun the updater before leaving.
 
