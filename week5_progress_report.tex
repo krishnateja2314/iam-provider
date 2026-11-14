@@ -1,0 +1,209 @@
+\documentclass{article}
+\usepackage[utf8]{inputenc}
+\usepackage{geometry}
+\usepackage{hyperref}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{tabularx}
+\usepackage{float}
+\geometry{a4paper, margin=1in}
+\newcolumntype{Y}{>{\raggedright\arraybackslash}X}
+\setlength{\emergencystretch}{2em}
+
+\title{\textbf{Progress Report: A Secure Multi-Tenant Identity, Authorization and Enterprise Access Platform (Week 5)}}
+\author{Krishna Teja (CS23BTECH11028) \and Jaya Prakash (CS23BTECH11015) \\ Department of Computer Science and Engineering \\ Indian Institute of Technology Hyderabad}
+\date{7 November 2026}
+
+\begin{document}
+
+\maketitle
+
+\section*{1. Summary of This Week}
+We did not receive a review of the Week 4 report, so this week we carried out the plan in Section 7 of that report exactly as written. We fixed the dependency advisories first. We then built the promised executable outcome: the AG01 reporting agent as an application service principal. Finally, we reran all the evidence from a \textbf{fresh git clone with new Docker volumes}:
+
+\begin{itemize}
+    \item \textbf{227 passed, 0 failed, 0 skipped} across 10 test files, including 16 cases against the live Keycloak provider. Week 4 had 197.
+    \item \texttt{npm audit}: \textbf{0 vulnerabilities}. Week 4 had 4 open.
+    \item The AG01 test command from the Week 4 report: \textbf{30 passed}. Every expected result was observed.
+    \item The mutation check caught \textbf{11 of 11} deliberately broken security guards, 4 of them new this week.
+    \item The real-browser PKCE and enterprise-broker proof passed \textbf{10 of 10} checks on the default host and again on an alternate host.
+    \item A physical Android phone ran the full mobile flow over the phone's hotspot, on video.
+\end{itemize}
+
+The verified code revision is \texttt{fde2efd}. The commits after it change documentation, evidence logs and one measurement script only. Raw logs are in \texttt{docs/evidence/2026-11-07/}, and the design is in \texttt{docs/adr/ADR-003-service-principals.md}.
+
+\section*{2. Status of the Week 4 Plan}
+\begin{tabularx}{\textwidth}{@{}l l Y@{}}
+\toprule
+\textbf{Item (Week 4, Section 7)} & \textbf{Status} & \textbf{Evidence} \\
+\midrule
+Dependency remediation & Done & \texttt{npm audit} reports 0. All four Week 4 advisories and a new \texttt{vite} advisory are fixed (Section 3.1). \\
+AG01 service principal & Done & \texttt{service-principal.test.ts}: 30 passed, 7 of them live. All six expected results observed (Section 4.2). \\
+Clean-clone rerun (suite, mutation, browser) & Done & 227/0/0; 11 of 11 killed; 10 of 10 browser checks on two hosts. \\
+Physical phone run & Done & realme 11 Pro+ 5G, Android 15, Chrome 156. Run by Krishna Teja; the Week 4 plan had assigned it to Jaya Prakash (Section 3.5). \\
+Independent rerun on a second machine & Open & Owner: Jaya Prakash. \\
+Performance experiment (P2) & Observed only & Latency measured; no optimization attempted or claimed (Section 3.4). \\
+\bottomrule
+\end{tabularx}
+
+\section*{3. Changes Made}
+\subsection*{3.1 Dependency Remediation}
+\begin{tabularx}{\textwidth}{@{}l Y@{}}
+\toprule
+\textbf{Advisory} & \textbf{Fix} \\
+\midrule
+\texttt{fastify} 5.12.5, header-validation bypass & Pinned \texttt{fastify} 5.12.8, the latest 5.12 patch (the fix landed in 5.12.7). \\
+\texttt{fast-uri}, scheme injection & Lockfile refresh: 3.1.9 under \texttt{ajv}, 4.2.3 under \texttt{fastify}. \\
+\texttt{minimatch} DoS, via \texttt{casbin} 5.51.1 & Override to \texttt{minimatch} 11.0.5. Casbin asks for \texttt{\^{}10.2.1}, no fixed 10.x release exists, and \texttt{npm audit fix --force} would have downgraded Casbin to 5.24.4. All 59 authorization cases and the Casbin deny mutation (M7) still pass. \\
+\texttt{vite} 8.3.2 (test tooling only; new since Week 4) & Lockfile refresh to 8.3.6. \\
+\bottomrule
+\end{tabularx}
+
+\subsection*{3.2 AG01: The Reporting Agent as a Service Principal}
+A program should not borrow a user's identity. If the agent were a user, it would get a membership, and any later role change would silently widen what it can do. We therefore made it a separate kind of principal:
+
+\begin{itemize}
+    \item \textbf{Keycloak client.} \texttt{iam-agent-reporting} is a confidential client that may only use the client-credentials grant. Its tokens carry audience \texttt{iam-backend}, no realm roles and no refresh token. They live 60 seconds, and a provider mapper stamps \texttt{principal\_kind=service} on them.
+    \item \textbf{Token validation.} A service token must not carry a user session (\texttt{sid}). If it has a \texttt{client\_id}, that must equal \texttt{azp}. Introspection must report the token active, issued to the same client, and bound to that client's own service-account user. That last check stops a human token from passing as a service token. Any other \texttt{principal\_kind} value is rejected.
+    \item \textbf{Registry and grants.} Migration 004 adds \texttt{service\_principals} (keyed by issuer and client ID, with a status) and \texttt{service\_principal\_grants} (tenant, resource, action). An unregistered or disabled principal gets 401. Authorization needs an exact grant. Casbin role policies are never used for a service principal. The seed grants exactly one action: list learning resources in Acme.
+    \item \textbf{Routes.} Tenant routes accept humans or services, and every allow still goes through \texttt{permit()}. Identity, session, consent and platform routes refuse service principals with 403 \texttt{PRINCIPAL\_KIND\_NOT\_ALLOWED}. A service token never creates a user, identity or membership row.
+    \item \textbf{Audit.} Rows written for the agent have \texttt{actor\_type='service'}, the service principal as actor, and the client ID in the metadata.
+\end{itemize}
+
+\subsection*{3.3 Tests and Mutations}
+The new test file has 15 cases that go through the real Fastify routes on PostgreSQL, 8 introspection cases with a mocked provider, and 7 live cases with real Keycloak tokens. Four new mutations break the new guards one at a time:
+\begin{itemize}
+    \item M8: the registry no longer refuses a disabled principal.
+    \item M9: introspection no longer binds the token to the client's own service account.
+    \item M10: human-only routes no longer refuse service principals.
+    \item M11: a grant no longer has to match the exact action.
+\end{itemize}
+
+\subsection*{3.4 Latency Observation}
+Every request is introspected without a cache, so we measured what that costs. The script \texttt{scripts/measure-latency.mjs} runs inside the backend container. Measured from the Windows host, every request, \texttt{/health} included, sat at about 15\,ms, which is Docker Desktop's port forwarding. The script sends 3 runs of 200 sequential requests per series after a warm-up.
+
+\subsection*{3.5 Physical Phone Run}
+The phone run exposed a real constraint. The client computes the PKCE challenge with \texttt{crypto.subtle}, which browsers only offer in a secure context: HTTPS, \texttt{localhost} or \texttt{127.0.0.1}. A plain-HTTP page on a LAN address is not one. We ran the stack on the laptop's address on the phone's own hotspot. On the phone we enabled Chrome's ``insecure origins treated as secure'' flag for the three lab addresses. The step-by-step procedure is now in \texttt{docs/demo-guide.md}, Section 11a.
+
+\section*{4. Experimental Evidence (Revision \texttt{fde2efd}, Clean Clone)}
+\subsection*{4.1 Complete Suite}
+\begin{table}[H]
+\centering
+\begin{tabular}{lr}
+\toprule
+\textbf{Test file} & \textbf{Passed} \\
+\midrule
+\texttt{t01-t02-identity-membership.test.ts} & 8 \\
+\texttt{t03-t04-t09-token-validation.test.ts} & 41 \\
+\texttt{t05-t08-authorization.test.ts} & 59 \\
+\texttt{t10-audit.test.ts} & 6 \\
+\texttt{provisioning-privacy.test.ts} & 9 \\
+\texttt{tenant-sso.test.ts} (3 live) & 10 \\
+\texttt{startup-config.test.ts} (subprocess) & 12 \\
+\texttt{api.test.ts} & 31 \\
+\texttt{session-lifecycle.test.ts} (6 live) & 21 \\
+\texttt{service-principal.test.ts} (new; 7 live) & 30 \\
+\midrule
+\textbf{Total} & \textbf{227 (0 failed, 0 skipped)} \\
+\bottomrule
+\end{tabular}
+\caption{Complete suite with real PostgreSQL and live Keycloak, 2026-11-07T05:49:38Z, new volumes, 15.5\,s.}
+\end{table}
+
+\subsection*{4.2 AG01 Against the Week 4 Expected Results}
+Command, as stated in the Week 4 report:
+\begin{verbatim}
+docker compose exec -T backend env RUN_DATABASE_TESTS=1 \
+  RUN_KEYCLOAK_TESTS=1 npx vitest run \
+  tests/security/service-principal.test.ts
+\end{verbatim}
+
+\begin{table}[H]
+\centering
+\begin{tabularx}{\textwidth}{@{}Y Y@{}}
+\toprule
+\textbf{Expected (Week 4)} & \textbf{Observed with real Keycloak tokens} \\
+\midrule
+Acme resource list: 200 & 200; every row belongs to Acme and is published \\
+Globex: 403 & 403 \texttt{TENANT\_ACCESS\_DENIED} (no grant in Globex) \\
+An admin action in Acme: 403 & 403 for members, audit, SSO config and single-resource read; \texttt{/me} also 403 \\
+Expired token: 401 & 401 (a 2-second token used after 3.5 seconds) \\
+Already-issued token after the client is disabled: 401 & 401 on the first request, 23--29\,ms after the change; a new token request fails with \texttt{invalid\_client} \\
+Audit rows with \texttt{actor\_type='service'} & Allow and deny rows name the service principal as actor, with \texttt{clientId=iam-agent-reporting} \\
+\bottomrule
+\end{tabularx}
+\caption{AG01 outcomes.}
+\end{table}
+
+One provider behaviour surprised us. Re-enabling a disabled Keycloak client makes its still-unexpired tokens valid again. For an agent that must stay off, the registry status is the switch to use, and it is tested.
+
+\subsection*{4.3 Mutation Independence}
+\begin{table}[H]
+\centering
+\begin{tabular}{llr}
+\toprule
+\textbf{ID} & \textbf{Guard broken on purpose} & \textbf{Result} \\
+\midrule
+M1 & Tenant membership check in \texttt{tenantContextHook} & Killed (3 tests) \\
+M2 & JWT signature verification & Killed (9) \\
+M3 & Tenant filter on submission lookup & Killed (1) \\
+M4 & Consent route admits suspended withdrawal & Killed (3) \\
+M5 & Startup configuration check & Killed (1) \\
+M6 & Outage reported as 503, not 401 & Killed (6) \\
+M7 & Casbin explicit-deny precedence & Killed (2) \\
+M8 & Disabled service principal refused (new) & Killed (1) \\
+M9 & Service token bound to its service account (new) & Killed (1) \\
+M10 & Human-only routes refuse services (new) & Killed (2) \\
+M11 & Grant matches the exact action (new) & Killed (1) \\
+\midrule
+--- & PostgreSQL container stopped (control) & INCONCLUSIVE, exit 2 \\
+\bottomrule
+\end{tabular}
+\caption{Mutation independence. Baseline: 211 passed, 0 failed, 16 skipped (live cases are skipped by design). The working tree was unchanged afterwards.}
+\end{table}
+
+The runner changed this week, so we repeated the control. Our first attempt used \texttt{docker compose stop postgres}, which also stops the backend that depends on it. That only proved ``backend not running''. The recorded control stops the database container alone.
+
+\subsection*{4.4 Latency}
+\begin{table}[H]
+\centering
+\begin{tabular}{lcc}
+\toprule
+\textbf{Series} & \textbf{p50 (ms), runs 1/2/3} & \textbf{p95 (ms), runs 1/2/3} \\
+\midrule
+\texttt{GET /health} (no authentication) & 0.70 / 0.55 / 0.48 & 1.36 / 1.47 / 1.39 \\
+Keycloak introspection call alone & 2.43 / 2.44 / 2.11 & 4.37 / 4.78 / 3.75 \\
+Agent \texttt{GET /api/v1/resources} & 7.23 / 6.88 / 6.17 & 9.88 / 9.97 / 9.66 \\
+\bottomrule
+\end{tabular}
+\caption{3 runs of 200 sequential requests per series; all 1,800 responses were 200.}
+\end{table}
+
+The provider check is about a third of an authenticated request (median p50 2.4 of 6.9\,ms). This is a single-machine observation, not a benchmark.
+
+\subsection*{4.5 Other Results}
+\begin{itemize}
+    \item \textbf{Build and checks.} \texttt{npm ci}, the typecheck (source and tests), the build and the 9 client-configuration checks all pass.
+    \item \textbf{Browser proof.} Playwright with Microsoft Edge passed 10 of 10 checks on the clean stack. All 10 also passed with \texttt{IAM\_PUBLIC\_HOST=127.0.0.1}. On that alternate issuer, the agent got 200 for the Acme list and 403 for Globex, members and \texttt{/me}.
+    \item \textbf{Revocation latency.} The first request with an existing token was denied (401) 45\,ms after provider logout, 41\,ms after own-session revocation, and 26 and 146\,ms after admin logout-all. These are local samples, not a service-level guarantee.
+    \item \textbf{Physical phone} (realme 11 Pro+ 5G, Android 15, Chrome 156, video recorded). Alice signed in with PKCE. She got Acme resources 200, Acme members 200, Globex resources 200 and \textbf{Globex members 403}. Session listing returned 200, the refresh token was rotated, and she signed out. \texttt{enterprise.bob} then signed in through the enterprise broker and got Acme resources 200 and \textbf{Acme members 403}. Details and video checksums are in \texttt{docs/evidence/2026-11-07/phone-run.md}.
+\end{itemize}
+
+\section*{5. Limitations and Open Items}
+\begin{itemize}
+    \item \textbf{Second machine.} The independent rerun by Jaya Prakash has not been done yet. All results above come from one Windows machine.
+    \item \textbf{Phone over HTTP.} The phone needed a Chrome flag because the lab has no HTTPS. iPhone Safari has no such flag and was not tested.
+    \item \textbf{Agent grants.} There is no API for managing grants; they are seeded or written by a database administrator. The live disable test uses the local bootstrap administrator, because our provider-admin client deliberately cannot manage clients.
+    \item \textbf{Deferred.} User-delegated agents (AG02), DNS verification of SSO domains, SCIM, and performance optimization.
+\end{itemize}
+
+\section*{6. Plan for the Final Submission}
+\begin{itemize}
+    \item \textbf{Jaya Prakash:} independent rerun of the evidence commands on a second machine, committed from his own account. The steps are in \texttt{docs/demo-guide.md}.
+    \item \textbf{Krishna Teja:} add the rerun results to \texttt{docs/verification-evidence.md} and to the final report, then rebuild and submit the final report.
+\end{itemize}
+
+\section*{7. Use of AI Tools}
+The code, tests and documentation this week were written with an AI coding agent (Claude Code), working in our repository under our direction. We judged the work by running it on real infrastructure from a clean clone, not by trusting the agent's output. The phone run was done by hand on a physical device. Both members remain responsible for explaining, testing and modifying the code.
+
+\end{document}
