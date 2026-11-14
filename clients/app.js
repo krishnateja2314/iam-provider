@@ -86,6 +86,11 @@ function rowsFor(id, data) {
     audit: () => (data.events || []).map(e => [e.action, e.decision, `${clock(e.timestamp)} · ${e.reason ?? ''} · ${shortId(e.correlation_id)}`, e.decision === 'allow' ? 'allow' : 'deny']),
     sessions: () => (data.sessions || []).map(s => [`Session ${shortId(s.id)}`, Object.values(s.clients || {}).join(', ') || 'session',
       `started ${clock(s.start)} · last seen ${clock(s.lastAccess)}`]),
+
+    delegations: () => (data.delegations || []).map(d => [`${d.agentClientId} · ${shortId(d.id)}`, d.active ? 'active' : d.revokedAt ? 'revoked' : 'expired',
+      `${d.scopes.join(', ')} · until ${clock(d.expiresAt)}`, d.active ? 'allow' : 'deny']),
+    delegate: () => data.delegation ? [[`${data.delegation.agentClientId} · ${data.delegation.id}`, 'created',
+      `${data.delegation.scopes.join(', ')} · until ${clock(data.delegation.expiresAt)}`, 'allow']] : [],
   };
   return pick[id]?.() ?? [];
 }
@@ -114,7 +119,7 @@ function controls() {
   for (const id of ['login', 'enterprise']) document.getElementById(id).disabled = busy;
   for (const id of ['refresh', 'logout']) document.getElementById(id).disabled = busy || !tokens;
   organization.disabled = busy || !tokens || !organization.value;
-  for (const id of ['resources', 'members', 'submissions', 'audit']) document.getElementById(id).disabled = busy || !tokens || !organization.value;
+  for (const id of ['resources', 'members', 'submissions', 'audit', 'delegations', 'delegate']) document.getElementById(id).disabled = busy || !tokens || !organization.value;
   document.getElementById('sessions').disabled = busy || !tokens;
   if (busy) status.dataset.state = 'busy';
 }
@@ -231,12 +236,15 @@ organization.onchange = () => {
     'Nothing is cached: the next request re-checks membership and roles for this tenant.');
   controls();
 };
-for (const [id, path, tenantRequired] of [
+for (const [id, path, tenantRequired, body] of [
   ['resources', 'resources', true], ['members', 'members', true], ['submissions', 'submissions', true],
-  ['audit', 'audit-events?limit=20', true], ['sessions', 'sessions', false],
+  ['audit', 'audit-events?limit=20', true], ['sessions', 'sessions', false], ['delegations', 'delegations', true],
+  // AG02: let the assistant agent list resources and the caller's own submissions in this tenant for 15 minutes.
+  ['delegate', 'delegations', true, { agentClientId: 'iam-agent-assistant', scopes: ['learning-resource:list', 'submission:list'], expiresInSeconds: 900 }],
 ]) document.getElementById(id).onclick = () => run(async () => {
-  const response = await fetch(`${apiBase}/api/v1/${path}`, { headers: {
+  const response = await fetch(`${apiBase}/api/v1/${path}`, { method: body ? 'POST' : 'GET', body: body ? JSON.stringify(body) : undefined, headers: {
     Authorization: `Bearer ${tokens.access_token}`, ...(tenantRequired ? { 'X-Organization-ID': organization.value } : {}),
+    ...(body ? { 'Content-Type': 'application/json' } : {}),
   } });
   const data = await response.json();
   // A denied tenant operation is expected demo evidence, not a reason to discard login.
@@ -245,7 +253,7 @@ for (const [id, path, tenantRequired] of [
   const route = `/${path.split('?')[0]}`;
   const where = tenantRequired ? orgNames.get(organization.value) ?? shortId(organization.value) : 'own sessions';
   const [label, why] = explain[response.status] ?? (response.ok ? explain[200] : ['Error', 'Unexpected response.']);
-  setVerdict(response.ok ? 'allow' : 'deny', String(response.status), label, `GET /api/v1${route} · ${where}\n${why}`);
+  setVerdict(response.ok ? 'allow' : 'deny', String(response.status), label, `${body ? 'POST' : 'GET'} /api/v1${route} · ${where}\n${why}`);
   for (const button of document.querySelectorAll('.endpoint')) button.dataset.last = String(button.id === id);
   renderResponse(id, response.status, data);
   appendLog(route, where, response.status);

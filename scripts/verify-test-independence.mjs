@@ -83,6 +83,27 @@ export const MUTATIONS = [
     find: ".where('resource', '=', resource).where('action', '=', request.action)",
     replace: ".where('resource', '=', resource)",
     expect: ['cannot perform admin or other ungranted actions in Acme'] },
+  // Final / AG02 user-delegated agent guards.
+  { id: 'M12', guard: 'Delegated agent needs the exact delegated scope',
+    file: 'src/modules/delegation/delegation-service.ts',
+    find: "if (!row.scopes.includes(`${resource}:${action}`)) return 'Action outside the delegated scope';",
+    replace: '',
+    expect: ['a permission the user holds but did not delegate is denied'] },
+  { id: 'M13', guard: 'Delegated agent is also limited by the delegator\'s own permission (intersection)',
+    file: 'src/modules/authorization/authorization-engine.ts',
+    find: "if (denial) return deny(denial, 'delegation-scope');",
+    replace: "if (denial) return deny(denial, 'delegation-scope'); return { allowed: true, reason: 'mutant', policy: 'mutant' };",
+    expect: ['a delegated scope the user does not hold grants nothing', 'the teaching relationship still applies'] },
+  { id: 'M14', guard: 'Revoked delegation refused',
+    file: 'src/modules/delegation/delegation-service.ts',
+    find: ".where('agent_delegations.revoked_at', 'is', null)",
+    replace: '',
+    expect: ['revocation applies on the agent'] },
+  { id: 'M15', guard: 'Only delegable agents can receive a delegation',
+    file: 'src/modules/delegation/delegation-service.ts',
+    find: "if (!agent || agent.status !== 'active' || !agent.delegable)",
+    replace: "if (!agent || agent.status !== 'active')",
+    expect: ['a non-delegable agent can neither use nor receive one'] },
 ].filter(m => !only || only.includes(m.id));
 
 const INFRA = /ECONNREFUSED|ENOTFOUND|EAI_AGAIN|getaddrinfo|Connection terminated|password authentication failed|Cannot find module|SyntaxError|Transform failed/i;

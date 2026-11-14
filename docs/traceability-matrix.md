@@ -81,7 +81,7 @@ not mean passed. Paths below are relative to `backend/`, unless otherwise specif
 | Item | Status / required future evidence |
 |---|---|
 | AG01 application machine identity | IMPLEMENTED (W5, ADR-003): `iam-agent-reporting` client-credentials client, `principal_kind=service`, registry + exact grant (Acme `learning-resource:list`), human-only routes refuse it, `actor_type='service'` audit. `service-principal.test.ts` (23 fixture + 7 live) and mutations M8-M11. |
-| AG02 user-delegated agent | NOT IMPLEMENTED; require permission intersection, grant expiry/revocation and delegator role-loss tests. |
+| AG02 user-delegated agent | IMPLEMENTED (final, ADR-004): `iam-agent-assistant` acts only through `agent_delegations` (user, tenant, scopes, expiry, revocation). Intersection with the delegator's current permission, non-delegable admin scopes, tenant binding, revocation/expiry/role-loss/suspension on the next request, no re-delegation, audit naming agent + delegator. `delegation.test.ts` (22 fixture + 4 live), mutations M12-M15, browser step in `verify-pkce.mjs`. |
 | Native/hardware device identity | NOT IMPLEMENTED; provider session references are the baseline. |
 | Full SCIM | NOT IMPLEMENTED; transactional application provisioning is the approved minimal slice. |
 | Optional performance experiment | OBSERVED, not optimised: 3 x 200 sequential requests inside the container; agent request p50 6.2-7.2 ms, introspection alone 2.1-2.4 ms, `/health` 0.5-0.7 ms. No throughput or improvement claim. |

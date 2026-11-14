@@ -132,9 +132,10 @@ equality never silently merges their application accounts.
 
 ## Scope
 
-Core human identity and tenant access are the priority. Full SCIM, optional machine
-identity/delegation, and the optional controlled performance experiment are not claimed
-complete. The traceability matrix records remaining verification and implementation gaps.
+Core human identity and tenant access are the priority. Both agent extensions are built:
+AG01 application service principal ([ADR-003](docs/adr/ADR-003-service-principals.md)) and AG02
+user-delegated agent ([ADR-004](docs/adr/ADR-004-delegated-agents.md)). Full SCIM and performance
+optimisation are not claimed (a latency observation exists). The traceability matrix records remaining verification and implementation gaps.
 The prototype and its demo documentation are published in the repository linked above.
 Local `.env` files, dependencies, compiled output, backups and historical personal reports
 are not included in the published commit.

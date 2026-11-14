@@ -2,6 +2,7 @@ import { newEnforcer, newModelFromString, StringAdapter } from 'casbin';
 import { getDb } from '../../db/connection.js';
 import type { AuthorizationDecision, AuthorizationRequest } from '../../common/types.js';
 import { authorizeServicePrincipal } from '../service-principal/service-principal-service.js';
+import { delegationScopeDenial } from '../delegation/delegation-service.js';
 
 const MODEL = `
 [request_definition]
@@ -23,7 +24,7 @@ const BASE = [
   ['instructor','submission','read'], ['instructor','submission','list'], ['instructor','submission','grade'],
   ['learner','learning-resource','read'], ['learner','learning-resource','list'],
   ['learner','submission','read'], ['learner','submission','list'], ['learner','submission','submit'],
-  ...['admin','instructor','learner'].flatMap(role => [['profile','read'],['consent','manage']].map(([obj,act])=>[role,obj,act])),
+  ...['admin','instructor','learner'].flatMap(role => [['profile','read'],['consent','manage'],['delegation','manage']].map(([obj,act])=>[role,obj,act])),
 ];
 
 // Database facts and hard tenant/relationship denies precede the policy engine.
@@ -35,6 +36,13 @@ export async function authorize(request: AuthorizationRequest): Promise<Authoriz
     const resource = request.resource === 'course' ? 'learning-resource' : request.resource === 'member' || request.resource === 'user' ? 'member' : request.resource === 'assignment' ? 'submission' : request.resource;
     // AG01: service principals have no membership or role; only explicit grants apply.
     if (request.subject.principalKind === 'service') return await authorizeServicePrincipal(request, resource);
+    // AG02: a delegated agent first needs the exact delegated scope in this tenant (re-read now, so a
+    // revoked or expired delegation stops working on the next request). Then it is evaluated as the
+    // delegator, below: agent permission = user permission AND delegated scope AND tenant context.
+    if (request.subject.principalKind === 'delegated') {
+      const denial = await delegationScopeDenial(request.subject.delegationId!, request.subject.agentId!, request.organization, resource, request.action);
+      if (denial) return deny(denial, 'delegation-scope');
+    }
     const membership = await db.selectFrom('memberships')
       .innerJoin('organizations','organizations.id','memberships.organization_id')
       .select(['memberships.id','memberships.status','organizations.status as orgStatus'])

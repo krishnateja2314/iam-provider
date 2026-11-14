@@ -5,7 +5,8 @@ import { getDb } from './db/connection.js';
 import { authorize } from './modules/authorization/authorization-engine.js';
 import { recordAuditEvent, queryAuditEvents } from './modules/audit/audit-service.js';
 import { listUserOrganizations } from './modules/organization/membership-service.js';
-import { authenticationHook, principalAuthenticationHook, tenantContextHook, ownMembershipHook, auditRequest, UUID_PATTERN, isUuid } from './middleware.js';
+import { authenticationHook, principalAuthenticationHook, tenantContextHook, ownMembershipHook, auditRequest, auditActor, UUID_PATTERN, isUuid } from './middleware.js';
+import { createDelegation, listDelegations, revokeDelegation, DELEGABLE_SCOPES, MAX_DELEGATION_SECONDS } from './modules/delegation/delegation-service.js';
 import { provisionOrganization, setOrganizationStatus, createMember, ProvisioningError, lockOrganization, discoverSso, getTenantSso } from './modules/provisioning/provisioning-service.js';
 import { getSharedProfile, recordConsent } from './modules/user/privacy-service.js';
 import { listProviderSessions, revokeProviderSession, resetProviderSessions } from './modules/auth/session-service.js';
@@ -14,6 +15,8 @@ import { listProviderSessions, revokeProviderSession, resetProviderSessions } fr
 const tenantHooks = [principalAuthenticationHook,tenantContextHook];
 // Admits suspended members of the selected tenant; used only for consent withdrawal.
 const ownMembershipHooks = [authenticationHook,ownMembershipHook];
+// Humans only, in an organization where they are an active member (AG02 delegation management).
+const humanTenantHooks = [authenticationHook,tenantContextHook];
 const uuid = {type:'string',pattern:UUID_PATTERN};
 const idParams = (key:string) => ({type:'object',required:[key],additionalProperties:false,properties:{[key]:uuid}});
 
@@ -85,7 +88,7 @@ export function registerRoutes(app:FastifyInstance):void {
       if(org.status!=='active')throw new ProvisioningError('forbidden','Organization inactive');
       const body=request.body as {title:string;status?:'published'|'draft'|'archived'};
       const resource=await trx.insertInto('learning_resources').values({organization_id:org.id,title:body.title,description:null,resource_type:'course',status:body.status??'draft',created_by:request.auth!.userId}).returningAll().executeTakeFirstOrThrow();
-      await recordAuditEvent({actorId:request.auth!.userId,actorType:'user',organizationId:org.id,action:'resource.create',resourceType:'learning-resource',resourceId:resource.id,decision:'allow',reason:'Admin resource creation within quota',correlationId:request.correlationId!,ipAddress:request.ip},trx);
+      await recordAuditEvent({...auditActor(request.auth),organizationId:org.id,action:'resource.create',resourceType:'learning-resource',resourceId:resource.id,decision:'allow',reason:'Admin resource creation within quota',correlationId:request.correlationId!,ipAddress:request.ip},trx);
       return {resource};
     });
   });
@@ -94,7 +97,7 @@ export function registerRoutes(app:FastifyInstance):void {
     if(!await permit(request,reply,'submission','submit',body.courseId))return;
     return getDb().transaction().execute(async trx=>{
       const submission=await trx.insertInto('submissions').values({organization_id:request.tenant!.organizationId,course_id:body.courseId,user_id:request.auth!.userId,content:body.content,grade:null}).returningAll().executeTakeFirstOrThrow();
-      await recordAuditEvent({actorId:request.auth!.userId,actorType:'user',organizationId:request.tenant!.organizationId,action:'submission.submit',resourceType:'submission',resourceId:submission.id,decision:'allow',reason:'Learner owns submission in published course',correlationId:request.correlationId!,ipAddress:request.ip},trx);return {submission};
+      await recordAuditEvent({...auditActor(request.auth),organizationId:request.tenant!.organizationId,action:'submission.submit',resourceType:'submission',resourceId:submission.id,decision:'allow',reason:'Learner owns submission in published course',correlationId:request.correlationId!,ipAddress:request.ip},trx);return {submission};
     });
   });
   app.get('/api/v1/submissions/:submissionId',{preHandler:tenantHooks,schema:{params:idParams('submissionId')}},async(request,reply)=>{
@@ -109,7 +112,7 @@ export function registerRoutes(app:FastifyInstance):void {
     const result=await getDb().transaction().execute(async trx=>{
       const submission=await trx.updateTable('submissions').set({grade:(request.body as {grade:number}).grade,updated_at:new Date()})
         .where('id','=',submissionId).where('organization_id','=',request.tenant!.organizationId).returningAll().executeTakeFirstOrThrow();
-      await recordAuditEvent({actorId:request.auth!.userId,actorType:'user',organizationId:request.tenant!.organizationId,action:'submission.grade',resourceType:'submission',resourceId:submissionId,decision:'allow',reason:'Assigned instructor or tenant admin',correlationId:request.correlationId!,ipAddress:request.ip},trx);
+      await recordAuditEvent({...auditActor(request.auth),organizationId:request.tenant!.organizationId,action:'submission.grade',resourceType:'submission',resourceId:submissionId,decision:'allow',reason:'Assigned instructor or tenant admin',correlationId:request.correlationId!,ipAddress:request.ip},trx);
       return submission;
     });return {submission:result};
   });
@@ -152,18 +155,48 @@ export function registerRoutes(app:FastifyInstance):void {
     const profile=await getSharedProfile({actorUserId:request.auth!.userId,userId:(request.params as {userId:string}).userId,organizationId:request.tenant!.organizationId,fields:['userId','displayName','bio']});
     await auditRequest(request,'profile.read','allow','Purpose-limited field projection');return {profile};
   });
-  app.post('/api/v1/policies',{preHandler:tenantHooks,schema:{body:{type:'object',additionalProperties:false,required:['roleName','resource','action','effect'],properties:{roleName:{type:'string',enum:['admin','instructor','learner']},resource:{type:'string',enum:['learning-resource','submission','member','audit','profile','consent']},action:{type:'string',enum:['read','list','grade','manage','create','update','submit']},effect:{type:'string',enum:['allow','deny']}}}}},async(request,reply)=>{
+  app.post('/api/v1/policies',{preHandler:tenantHooks,schema:{body:{type:'object',additionalProperties:false,required:['roleName','resource','action','effect'],properties:{roleName:{type:'string',enum:['admin','instructor','learner']},resource:{type:'string',enum:['learning-resource','submission','member','audit','profile','consent','delegation']},action:{type:'string',enum:['read','list','grade','manage','create','update','submit']},effect:{type:'string',enum:['allow','deny']}}}}},async(request,reply)=>{
     if(!await permit(request,reply,'policy','manage'))return;
     const body=request.body as {roleName:string;resource:string;action:string;effect:'allow'|'deny'};
     return getDb().transaction().execute(async trx=>{
       const row=await trx.insertInto('policy_rules').values({id:randomUUID(),organization_id:request.tenant!.organizationId,role_name:body.roleName,resource:body.resource,action:body.action,effect:body.effect}).returningAll().executeTakeFirstOrThrow();
-      await recordAuditEvent({actorId:request.auth!.userId,actorType:'user',organizationId:request.tenant!.organizationId,action:'policy.update',resourceType:'policy',resourceId:row.id,decision:'allow',reason:'Tenant admin policy change',correlationId:request.correlationId!,ipAddress:request.ip},trx);return {policy:row};
+      await recordAuditEvent({...auditActor(request.auth),organizationId:request.tenant!.organizationId,action:'policy.update',resourceType:'policy',resourceId:row.id,decision:'allow',reason:'Tenant admin policy change',correlationId:request.correlationId!,ipAddress:request.ip},trx);return {policy:row};
     });
   });
   app.get('/api/v1/teaching-assignments',{preHandler:tenantHooks},async(request,reply)=>{
     if(!await permit(request,reply,'submission','list'))return;
     const assignments=await getDb().selectFrom('teaching_assignments').selectAll().where('user_id','=',request.auth!.userId).where('organization_id','=',request.tenant!.organizationId).execute();
     await auditRequest(request,'teaching-assignment.list','allow','Tenant-bound teaching references');return {assignments};
+  });
+  // AG02: user-delegated agents. A user delegates scopes to a registered agent in ONE tenant.
+  // Agents themselves can never call these routes (authenticationHook refuses service credentials).
+  app.post('/api/v1/delegations',{preHandler:humanTenantHooks,schema:{body:{type:'object',additionalProperties:false,required:['agentClientId','scopes','expiresInSeconds'],properties:{agentClientId:{type:'string',minLength:1,maxLength:255,pattern:'^[a-zA-Z0-9_.-]+$'},scopes:{type:'array',minItems:1,maxItems:20,uniqueItems:true,items:{type:'string',enum:[...DELEGABLE_SCOPES,'member:manage','policy:manage','audit:read','consent:manage','learning-resource:create','learning-resource:update']}},expiresInSeconds:{type:'integer',minimum:60,maximum:MAX_DELEGATION_SECONDS}}}}},async(request,reply)=>{
+    if(!await permit(request,reply,'delegation','manage'))return;
+    const body=request.body as {agentClientId:string;scopes:string[];expiresInSeconds:number};
+    try {
+      const created=await createDelegation({...body,userId:request.auth!.userId,organizationId:request.tenant!.organizationId,issuer:request.auth!.issuer,correlationId:request.correlationId!,ipAddress:request.ip});
+      return reply.code(201).send(created);
+    } catch(error) {
+      const code=(error as {code?:string}).code;
+      if(code==='SCOPE_NOT_DELEGABLE'||code==='AGENT_NOT_DELEGABLE'||code==='DELEGATION_INVALID'){
+        await auditRequest(request,'delegation.create','deny',(error as Error).message,'delegation');
+        return reply.code(400).send({error:(error as Error).message,code});
+      }
+      throw error;
+    }
+  });
+  app.get('/api/v1/delegations',{preHandler:humanTenantHooks},async(request,reply)=>{
+    if(!await permit(request,reply,'delegation','manage'))return;
+    await auditRequest(request,'delegation.list','allow','Own delegations only');
+    return {delegations:await listDelegations(request.auth!.userId,request.tenant!.organizationId)};
+  });
+  app.delete('/api/v1/delegations/:delegationId',{preHandler:humanTenantHooks,schema:{params:idParams('delegationId')}},async(request,reply)=>{
+    // Revoking one's own delegation is always allowed to an active member: a tenant policy that
+    // denies creating delegations must never stop a user from withdrawing one.
+    const {delegationId}=request.params as {delegationId:string};
+    const revoked=await revokeDelegation({delegationId,userId:request.auth!.userId,organizationId:request.tenant!.organizationId,issuer:request.auth!.issuer,correlationId:request.correlationId!,ipAddress:request.ip});
+    if(!revoked){await auditRequest(request,'delegation.revoke','deny','No active delegation of the caller with this ID','delegation',delegationId);return reply.code(404).send({error:'Delegation not found',code:'NOT_FOUND'});}
+    return {revoked:true};
   });
   app.get('/api/v1/sessions',{preHandler:[authenticationHook]},async request=>{
     const sessions=await listProviderSessions(request.auth!.keycloakSub);

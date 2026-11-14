@@ -16,9 +16,18 @@ export interface AuthenticatedUser {
    * to a registered service principal; userId then holds the service principal ID and authority
    * comes only from explicit per-tenant grants, never from roles or memberships.
    */
-  principalKind?: 'human' | 'service';
+  principalKind?: 'human' | 'service' | 'delegated';
   /** OAuth client of a service principal (token azp). */
   clientId?: string;
+  /**
+   * AG02: a 'delegated' caller is an agent acting for a user through a delegation record.
+   * userId then holds the DELEGATOR's user ID (so ownership and membership checks are the user's),
+   * agentId the agent's service principal ID, and authority is the intersection of the user's
+   * current permission, the delegated scopes and the delegation's single organization.
+   */
+  agentId?: string;
+  delegationId?: string;
+  delegationOrganizationId?: string;
 }
 
 export interface TenantContext {

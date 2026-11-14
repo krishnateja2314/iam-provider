@@ -5,7 +5,8 @@ import { findOrCreateUser } from './modules/user/user-service.js';
 import { validateMembership, findOwnMembership } from './modules/organization/membership-service.js';
 import { recordAuditEvent } from './modules/audit/audit-service.js';
 import { resolveServicePrincipal, validateServiceTenant } from './modules/service-principal/service-principal-service.js';
-import type { AuthenticatedUser, TenantContext, RequestContext } from './common/types.js';
+import { resolveDelegation } from './modules/delegation/delegation-service.js';
+import type { AuthenticatedUser, TenantContext, RequestContext, AuditEntry } from './common/types.js';
 import { AuthenticationError, DependencyError, TenantError } from './common/types.js';
 
 declare module 'fastify' {
@@ -25,13 +26,23 @@ export async function correlationIdHook(request: FastifyRequest, reply: FastifyR
   reply.header('X-Correlation-ID',request.correlationId);
 }
 
+/**
+ * Who the audit trail names for this caller. A delegated agent (AG02) is recorded as the actor
+ * (actor_type 'service', its service principal ID) and the delegating user as the subject, so
+ * "who did it" and "on whose behalf" are both queryable.
+ */
+export function auditActor(auth: AuthenticatedUser|undefined): Pick<AuditEntry,'actorId'|'actorType'|'subjectId'|'metadata'> {
+  if (auth?.principalKind === 'delegated') return {actorId:auth.agentId!,actorType:'service',subjectId:auth.userId,
+    metadata:{clientId:auth.clientId,delegationId:auth.delegationId,onBehalfOf:auth.userId}};
+  if (auth?.principalKind === 'service') return {actorId:auth.userId,actorType:'service',subjectId:auth.userId,metadata:{clientId:auth.clientId}};
+  return {actorId:auth?.userId??null,actorType:'user',subjectId:auth?.userId??null,metadata:null};
+}
+
 export async function auditRequest(request: FastifyRequest, action: string, decision: 'allow'|'deny'|'error', reason: string, resourceType: string|null=null, resourceId: string|null=null): Promise<void> {
   try {
-    const service = request.auth?.principalKind === 'service';
-    await recordAuditEvent({actorId:request.auth?.userId??null,actorType:service?'service':'user',
+    await recordAuditEvent({...auditActor(request.auth),
       organizationId:request.tenant?.organizationId??(isUuid(request.headers['x-organization-id'])?request.headers['x-organization-id']:null),action,decision,reason,
-      subjectId:request.auth?.userId??null,resourceType,resourceId,
-      correlationId:request.correlationId??null,ipAddress:request.ip,metadata:service?{clientId:request.auth!.clientId}:null});
+      resourceType,resourceId,correlationId:request.correlationId??null,ipAddress:request.ip});
   } catch { throw Object.assign(new Error('Audit storage unavailable'),{statusCode:503,code:'AUDIT_UNAVAILABLE'}); }
 }
 
@@ -43,10 +54,24 @@ async function authenticate(request: FastifyRequest, reply: FastifyReply, allowS
       // AG01: registry lookup, never a just-in-time user. Unknown or disabled principal -> 401.
       const principal = await resolveServicePrincipal(payload.iss!,payload.azp as string);
       request.auth = {userId:principal.id,keycloakSub:payload.sub!,issuer:payload.iss!,principalKind:'service',clientId:principal.clientId,platformAdmin:false};
+      const delegationHeader = request.headers['x-delegation-id'];
+      if (delegationHeader !== undefined) {
+        // AG02: the agent acts for a user. Unknown, foreign, revoked or expired delegation -> 401.
+        if (!isUuid(delegationHeader)) throw new AuthenticationError('Malformed delegation identifier');
+        const delegation = await resolveDelegation(principal.id,delegationHeader);
+        request.auth = {userId:delegation.userId,keycloakSub:payload.sub!,issuer:payload.iss!,principalKind:'delegated',clientId:principal.clientId,
+          agentId:principal.id,delegationId:delegation.id,delegationOrganizationId:delegation.organizationId,platformAdmin:false};
+      }
       if (!allowService) {
         await auditRequest(request,'authentication','deny','Service principal not permitted on this route');
         reply.code(403).send({error:'Access denied',code:'PRINCIPAL_KIND_NOT_ALLOWED'});
       }
+      return;
+    }
+    if (request.headers['x-delegation-id'] !== undefined) {
+      // A delegation is an agent's authority. A human sending one is a confused or forged request.
+      await auditRequest(request,'authentication','deny','Delegation header on a human credential');
+      reply.code(400).send({error:'X-Delegation-ID is only valid with an agent credential',code:'DELEGATION_NOT_ALLOWED'});
       return;
     }
     const user = buildAuthenticatedUser(payload);
@@ -91,6 +116,8 @@ export async function tenantContextHook(request: FastifyRequest, reply: FastifyR
       request.ctx = {user:request.auth,tenant:request.tenant,correlationId:request.correlationId!,ipAddress:request.ip};
       return;
     }
+    // AG02: a delegation is bound to one organization; the delegator must still be an active member.
+    if (request.auth.principalKind === 'delegated' && request.auth.delegationOrganizationId !== orgId) throw new TenantError('Delegation is bound to another organization');
     const membership = await validateMembership(request.auth.userId,orgId);
     request.tenant = {organizationId:orgId,organizationSlug:membership.organizationSlug,membershipId:membership.membershipId,roles:membership.roles,membershipStatus:membership.membershipStatus};
     request.ctx = {user:request.auth,tenant:request.tenant,correlationId:request.correlationId!,ipAddress:request.ip};

@@ -68,7 +68,8 @@ With introspection disabled, an already-issued valid access token can remain usa
 - Authorization fact reads and later mutation commits are not universally serialized together. Role removal/suspension during an in-flight operation needs an explicit consistency policy and adversarial tests beyond next-request checks.
 - Development HTTP, provider `start-dev`, sample passwords/secrets and a browser mobile demo are not production hardening or native-app secure storage.
 - Application service principals (AG01) are implemented with a registry and exact per-tenant grants (ADR-003); grants have no management API, and re-enabling a disabled Keycloak client revives unexpired tokens unless the registry row is disabled.
-- Agent delegation, tenant-specific real enterprise onboarding, hardware device attestation and performance benchmarks are **NOT IMPLEMENTED**.
+- User-delegated agents (AG02) are implemented (ADR-004): agent permission = delegator's current permission AND delegated scope AND the delegation's single tenant, re-checked on every request; administrative scopes are not delegable and agents cannot re-delegate. Invariant 7 ("an agent cannot have more effective permission than its delegating user") is tested in `delegation.test.ts` and by mutations M12-M15.
+- Tenant-specific real enterprise onboarding, hardware device attestation and performance benchmarks are **NOT IMPLEMENTED**.
 
 ## Verification Discipline
 

@@ -6,6 +6,7 @@ import { migrationSql as initial } from './migrations/001-initial.js';
 import { migrationSql as boundaries } from './migrations/002-boundaries.js';
 import { migrationSql as tenantSso } from './migrations/003-tenant-sso.js';
 import { migrationSql as servicePrincipals } from './migrations/004-service-principals.js';
+import { migrationSql as agentDelegations } from './migrations/005-agent-delegations.js';
 
 dotenv.config();
 
@@ -18,7 +19,7 @@ export async function migrate(connectionString = process.env.DATABASE_URL): Prom
     await client.query(`CREATE TABLE IF NOT EXISTS schema_migrations (
       version integer PRIMARY KEY, checksum text NOT NULL, applied_at timestamptz NOT NULL DEFAULT now()
     )`);
-    for (const [version, statement] of [[1, initial], [2, boundaries], [3, tenantSso], [4, servicePrincipals]] as const) {
+    for (const [version, statement] of [[1, initial], [2, boundaries], [3, tenantSso], [4, servicePrincipals], [5, agentDelegations]] as const) {
       const checksum = createHash('sha256').update(statement).digest('hex');
       const existing = await client.query('SELECT checksum FROM schema_migrations WHERE version = $1', [version]);
       if (existing.rows.length) {

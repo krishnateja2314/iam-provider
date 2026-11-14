@@ -122,6 +122,7 @@ export interface AuditEventTable {
 export interface Database {
   service_principals: ServicePrincipalTable;
   service_principal_grants: ServicePrincipalGrantTable;
+  agent_delegations: AgentDelegationTable;
   organization_sso_configs: OrganizationSsoConfigTable;
   policy_rules: PolicyRuleTable;
   submissions: SubmissionTable;
@@ -182,6 +183,7 @@ export interface ServicePrincipalTable {
   client_id: string;
   display_name: string;
   status: 'active' | 'disabled';
+  delegable: Generated<boolean>;
   created_at: Generated<Date>;
   updated_at: Generated<Date>;
 }
@@ -193,5 +195,16 @@ export interface ServicePrincipalGrantTable {
   resource: string;
   action: string;
   granted_by: string | null;
+  created_at: Generated<Date>;
+}
+
+export interface AgentDelegationTable {
+  id: Generated<string>;
+  service_principal_id: string;
+  user_id: string;
+  organization_id: string;
+  scopes: string[];
+  expires_at: Date;
+  revoked_at: Date | null;
   created_at: Generated<Date>;
 }

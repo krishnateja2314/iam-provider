@@ -297,6 +297,30 @@ lists: list learning resources in Acme. Identity, session, consent and platform 
 on the next request, because introspection is uncached. Its audit rows say `actor_type='service'`.
 See `docs/adr/ADR-003-service-principals.md`.
 
+### AG02 Assistant Agent Acting For a User (Delegation)
+
+```powershell
+docker compose exec -T backend env RUN_DATABASE_TESTS=1 RUN_KEYCLOAK_TESTS=1 npx vitest run tests/security/delegation.test.ts
+```
+
+**Expected:** 26 passed (22 fixture, 4 live). Live demo:
+
+1. Open `http://localhost:5173/web.html`, sign in as `alice / alice123`, select **Globex** (Alice is a learner there).
+2. Press **POST /delegations (AG02)**. The response shows a delegation of `learning-resource:list` and
+   `submission:list` to `iam-agent-assistant` for 15 minutes. Copy its ID.
+3. Run `node scripts/demo-delegation.mjs <delegation-id> 10000000-0000-0000-0000-000000000002`.
+   Expected: without the delegation 403; with it, resources 200 and submissions 200 (only Alice's own);
+   members 403; the same delegation in Acme 403.
+4. Press **GET /delegations** to see it listed as active. Revoke it with
+   `DELETE /api/v1/delegations/<id>` (or let it expire) and rerun step 3: the delegated calls return 401.
+
+**Explain:** the agent has no authority of its own. A user lends it a few scopes in one tenant.
+At every request the backend re-reads the delegation and then evaluates the request as that user, so
+the agent gets the intersection of the user's current permission, the delegated scope and the tenant.
+A learner who delegates `submission:grade` gives the agent nothing, because the learner cannot grade.
+Administrative scopes cannot be delegated at all, and an agent cannot create delegations.
+See `docs/adr/ADR-004-delegated-agents.md`.
+
 ## 10. Complete Test Run Including Live Sessions
 
 The password-grant client is deliberately disabled by default. Enable it only for
@@ -514,9 +538,9 @@ in the current tenant. Installing Keycloak alone does not satisfy the latter.
 PKCE login and synthetic enterprise federation; tenant roles; resource/submission
 authorization; policy changes/deny precedence; migrations/constraints; transactional
 provisioning/quotas/status; consent/profile filtering; audit/fail-closed behavior;
-provider lifecycle integration; AG01 application service principal; 227 tests; browser proof; new-volume startup.
+provider lifecycle integration; AG01 application service principal; AG02 user-delegated agent; 253 tests; browser proof; new-volume startup.
 
-**Deferred:** user delegation (AG02), full SCIM, native mobile
+**Deferred:** full SCIM, native mobile
 apps, hardware-attested devices and real-company domain/SSO integration. A three-run latency
 observation exists (`scripts/measure-latency.mjs`) but is not a benchmark. The provider-admin service account is infrastructure;
 the application's agent is `iam-agent-reporting` (AG01). Local HTTP and public synthetic fixtures

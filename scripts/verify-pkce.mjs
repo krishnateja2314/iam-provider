@@ -136,6 +136,23 @@ try {
   check(allowAudit.ok && (await allowAudit.json()).events.length > 0, 'Tenant-admin allow audit evidence missing');
   check((await tenant(web.access_token, learnerOrg.organizationId, 'audit-events')).status === 403, 'Learner tenant audit access allowed');
   console.log('PASS: browser tenant selector, same-user admin/learner boundary, published lists, member403, cross-tenant404 and tenant-scoped allow/deny audit');
+  // AG02: Alice delegates to the assistant agent from the browser, in the tenant where she is a learner.
+  await web.page.locator('#delegate').click();
+  await web.page.waitForFunction(() => { try { return JSON.parse(document.querySelector('#result').textContent).httpStatus === 201; } catch { return false; } });
+  const delegationId = JSON.parse(await web.page.locator('#result').textContent()).delegation.id;
+  const assistant = await form('token', { grant_type: 'client_credentials', client_id: 'iam-agent-assistant', client_secret: process.env.KEYCLOAK_ASSISTANT_CLIENT_SECRET || 'dev-agent-assistant-secret' });
+  check(assistant.ok, 'Assistant agent token request failed');
+  const agentToken = (await assistant.json()).access_token;
+  const asAgent = (organizationId, path) => fetch(`${apiBase}/api/v1/${path}`, { signal: AbortSignal.timeout(15000),
+    headers: { Authorization: `Bearer ${agentToken}`, 'X-Organization-ID': organizationId, 'X-Delegation-ID': delegationId } });
+  check((await asAgent(learnerOrg.organizationId, 'resources')).status === 200, 'Delegated agent could not list resources');
+  check((await asAgent(learnerOrg.organizationId, 'members')).status === 403, 'Delegated agent reached an admin route');
+  check((await asAgent(adminOrg.organizationId, 'resources')).status === 403, 'Delegation crossed into another tenant');
+  const revokedDelegation = await fetch(`${apiBase}/api/v1/delegations/${delegationId}`, { method: 'DELETE', signal: AbortSignal.timeout(15000),
+    headers: { Authorization: `Bearer ${web.access_token}`, 'X-Organization-ID': learnerOrg.organizationId } });
+  check(revokedDelegation.ok, 'Delegation revocation failed');
+  check((await asAgent(learnerOrg.organizationId, 'resources')).status === 401, 'Revoked delegation still accepted');
+  console.log('PASS: AG02 delegation created in the browser; agent 200 in scope, 403 on members and in the other tenant, 401 after revocation');
   const mobile = await authenticate('mobile', 'bob', 'bob123');
   const enterprise = await authenticate('web', 'enterprise.bob', 'enterprise-bob123', true);
   const enterpriseMobile = await authenticate('mobile', 'enterprise.bob', 'enterprise-bob123', true);

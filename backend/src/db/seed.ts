@@ -199,6 +199,11 @@ async function seed() {
     await client.query(`INSERT INTO service_principal_grants (service_principal_id, organization_id, resource, action)
       SELECT id, $2, 'learning-resource', 'list' FROM service_principals WHERE issuer = $1 AND client_id = 'iam-agent-reporting'
       ON CONFLICT (service_principal_id, organization_id, resource, action) DO NOTHING`, [agentIssuer, IDS.ORG_ACME]);
+    // AG02: the assistant agent may act FOR a user, but only through a delegation that user creates.
+    // It holds no grants of its own, so without a delegation it can do nothing in any tenant.
+    await client.query(`INSERT INTO service_principals (issuer, client_id, display_name, status, delegable)
+      VALUES ($1, 'iam-agent-assistant', 'AG02 assistant agent (user-delegated)', 'active', true)
+      ON CONFLICT (issuer, client_id) DO UPDATE SET delegable = true`, [agentIssuer]);
     await client.query(`INSERT INTO learning_resources (id,organization_id,title,resource_type,status,created_by)
       VALUES ('50000000-0000-0000-0000-000000000005',$1,'Unpublished synthetic course','course','draft',$2)
       ON CONFLICT (id) DO NOTHING`,[IDS.ORG_ACME,IDS.USER_BOB]);
