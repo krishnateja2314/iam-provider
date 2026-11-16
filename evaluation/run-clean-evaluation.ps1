@@ -1,6 +1,6 @@
 # Clean-state evaluation run: fresh clone of a revision, new Docker volumes, every reported check.
 # Usage (Windows PowerShell 5.1+, Docker Desktop running, host Node >= 24, ports 3100/5173/8180 free):
-#   powershell -ExecutionPolicy Bypass -File evaluation\run-clean-evaluation.ps1 [-Revision cs5903-final-2026] [-SkipMutation]
+#   powershell -ExecutionPolicy Bypass -File evaluation\run-clean-evaluation.ps1 [-Revision cs5903-final-2026] [-SkipMutation] [-BrowserChannel msedge|chrome]
 # Writes raw logs to evaluation\results\<yyyy-MM-dd>-clean\ in THIS checkout and removes the isolated
 # stack and its volumes at the end. Nothing in your normal stack or volumes is touched, but stop
 # your normal stack first (docker compose stop) because the ports are the same.

@@ -199,7 +199,7 @@ every number and figure. One command runs everything from a fresh clone with new
 
 ```powershell
 docker compose stop      # the clean run uses the same ports
-powershell -ExecutionPolicy Bypass -File evaluation\run-clean-evaluation.ps1 -Revision cs5903-final-2026
+powershell -ExecutionPolicy Bypass -File evaluation\run-clean-evaluation.ps1 -Revision cs5903-final-2026 -BrowserChannel msedge
 ```
 
 ## Operational handover

@@ -116,8 +116,9 @@ a single-machine, sequential observation, not a throughput benchmark.
 - No independent rerun on a second machine (planned for the second team member; not done).
 - No concurrency or throughput load test. Latency is sequential only.
 - No iOS / Safari run. The physical-phone run (Android Chrome, 7 Nov) predates AG02.
-- Experiment E1 ran on the development stack (normal volumes) on 16 Nov, not inside a clean clone.
-  The backend source on that stack is identical to `e13f019`.
+- E1 ran on the development stack on 16 Nov and was repeated in a clean clone of `7677178` with the
+  same verdicts (`results/2026-11-16-clean/`). That clean run's browser-proof and mutation steps did not
+  complete (host low on memory); their evidence is the 14 Nov clean run of identical code `e13f019`.
 
 ## Reproduce
 

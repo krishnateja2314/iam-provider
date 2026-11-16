@@ -18,6 +18,19 @@ Docker Desktop, Keycloak 26.8.0.
 
 Raw: [`evaluation/results/2026-11-16/`](../evaluation/results/2026-11-16/).
 
+### Clean clone of `7677178` (submission package, same code as `e13f019`)
+
+`evaluation/run-clean-evaluation.ps1 -Revision 7677178 -BrowserChannel msedge` (fresh clone, project
+`iam-evalclean`, new volumes). Raw: [`evaluation/results/2026-11-16-clean/`](../evaluation/results/2026-11-16-clean/).
+
+| Step | Result |
+|---|---|
+| Stack up, typecheck, build, `npm audit`, client config | all exit 0; 0 vulnerabilities; 9/9 |
+| Full suite, real PostgreSQL + live Keycloak | **253 passed** (253), exit 0 |
+| E1 baseline vs solution | reproduced: baseline accepted 15/15 revoked tokens on the first request (agent median 58.6 s); solution 401 on the first request in 15/15 (median 31 / 16 / 8 ms); exit 0 |
+| Latency (in-container) | p50: health 0.50, introspection 2.11, agent request 5.92 ms; all 200 |
+| Browser proof, mutation runner | **not completed in this run**: the run was stopped while the browser step was starting because the host ran low on memory. An earlier clean run of `a2e96d7` the same day reported 15/15 mutations killed, but its log was deleted before the rerun, so it is not claimed here. The current evidence for these two checks is the 14 Nov clean run of `e13f019` (identical code). |
+
 ## 2026-11-14: Final Revision `e13f019` (AG02)
 
 Code revision verified: **`e13f01903f7a53676dd7abd42b6269e0d8c495f6`** (AG02 user-delegated agent).
