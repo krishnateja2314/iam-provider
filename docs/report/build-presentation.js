@@ -78,7 +78,7 @@ sec("Opening");
   T(s, "Secure Multi-Tenant Identity and Access Platform", { x: 0.6, y: 1.1, w: 8.8, h: 1.4, fontSize: 38, bold: true, color: C.background1, fontFace: THEME.headFontFace });
   T(s, "Keycloak proves who you are. Our backend decides what you may do, in each organization, on every request, for people and for AI agents.", { x: 0.6, y: 2.6, w: 7.8, h: 0.8, fontSize: 16, color: C.background2, italic: true });
   T(s, [
-    { text: "Team P01-G33", options: { bold: true, breakLine: true } },
+    { text: "Project 01 · Group 33 (Team P01-G33)", options: { bold: true, breakLine: true } },
     { text: "Krishna Teja (CS23BTECH11028) · Jaya Prakash (CS23BTECH11015)", options: { breakLine: true } },
     { text: "Mentor: Koundinya · Instructor: Prof. Praveen Tammana", options: { breakLine: true } },
     { text: "github.com/krishnateja2314/iam-provider · tag cs5903-final-2026" },

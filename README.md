@@ -1,6 +1,6 @@
 # Secure Multi-Tenant Identity and Access Platform
 
-Team **P01-G33** · CS5903 (IIT Hyderabad, 2026) · Krishna Teja (CS23BTECH11028), Jaya Prakash (CS23BTECH11015)
+**Project 01 · Group 33** (team P01-G33) · CS5903 (IIT Hyderabad, 2026) · Krishna Teja (CS23BTECH11028), Jaya Prakash (CS23BTECH11015)
 Repository: https://github.com/krishnateja2314/iam-provider · Final tag: **`cs5903-final-2026`**
 
 An identity and access platform for a multi-tenant learning SaaS. **Keycloak proves who a person or

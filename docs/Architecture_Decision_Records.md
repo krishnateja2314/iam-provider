@@ -1,6 +1,6 @@
 # Architecture Decision Records — Secure Multi-Tenant IAM Platform
 
-Team P01-G33 · CS5903 · Repository: https://github.com/krishnateja2314/iam-provider ·
+Project 01 · Group 33 (team P01-G33) · CS5903 · Repository: https://github.com/krishnateja2314/iam-provider ·
 Final tag: `cs5903-final-2026`
 
 This is the single ADR log the final submission guide (§3) asks for. It has one record per material
