@@ -17,7 +17,7 @@ one exact grant. A user-delegated agent (AG02) acts for a user with
 | A. Project Report (guide format, 8 pages) | [`docs/Project_Report.pdf`](docs/Project_Report.pdf) (source `docs/report/Project_Report.tex`) |
 | B. Architecture Decision Records | [`docs/Architecture_Decision_Records.md`](docs/Architecture_Decision_Records.md) (14 records, incl. the 9 Oct methodology record) |
 | Experimental evaluation (baseline vs solution, raw results, figures) | [`evaluation/README.md`](evaluation/README.md) |
-| Recorded demonstration (100 s, captioned, real stack) | [`docs/demo/demo-walkthrough.mp4`](docs/demo/demo-walkthrough.mp4) · regenerate with `node scripts/record-demo.mjs` |
+| Recorded demonstration (2 min 22 s, captioned, visible cursor and clicks, real stack) | [`docs/demo/demo-walkthrough.mp4`](docs/demo/demo-walkthrough.mp4) · regenerate with `node scripts/record-demo.mjs` |
 | Final presentation | [`docs/Final_Presentation.pptx`](docs/Final_Presentation.pptx) |
 | Full final report (61 pages, 36 issues and fixes) | [`docs/Final_Report_Full.pdf`](docs/Final_Report_Full.pdf) (source `final_report.tex`) |
 | Evidence per revision and date (raw logs) | [`docs/verification-evidence.md`](docs/verification-evidence.md), `docs/evidence/` |

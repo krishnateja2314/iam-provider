@@ -14,7 +14,7 @@ Docker Desktop, Keycloak 26.8.0.
 | E1 baseline (JWT-only) vs solution, 4 operations × 5 trials | `evaluation/scripts/baseline-revocation.mjs` (see `evaluation/README.md`) | Baseline accepted the revoked token on the first request in **15/15** revocation trials and kept accepting a disabled agent's token for a median **59.4 s**. Solution: **401 on the first request in 15/15** (median 22 / 13 / 7 ms) and 0 accepted afterwards. Password-reset control: both accept (provider behaviour). Exit 0 |
 | Suite without live gates | `docker compose exec -T backend npm test` | 231 passed, 22 skipped |
 | Suite with real PostgreSQL | `... env KEYCLOAK_INTROSPECTION=false RUN_DATABASE_TESTS=1 npm test` | 233 passed, 20 skipped |
-| Recorded demo | `node scripts/record-demo.mjs` (Edge) | `docs/demo/demo-walkthrough.mp4`, 100 s; all captioned calls returned the expected status |
+| Recorded demo | `node scripts/record-demo.mjs` (Edge) | `docs/demo/demo-walkthrough.mp4`, re-recorded with a visible pointer and click ripples (142 s); all captioned calls returned the expected status |
 
 Raw: [`evaluation/results/2026-11-16/`](../evaluation/results/2026-11-16/).
 

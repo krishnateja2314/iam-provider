@@ -379,7 +379,7 @@ sec("Results");
   T(s, "Backup recording", { x: 6.8, y: 1.35, w: 2.5, h: 0.4, fontSize: 16, bold: true, color: C.accent3 });
   T(s, [
     { text: "docs/demo/demo-walkthrough.mp4", options: { breakLine: true, bold: true } },
-    { text: "100 s, captioned, real stack, real calls", options: { breakLine: true } },
+    { text: "2 min 22 s, captioned, visible clicks, real calls", options: { breakLine: true } },
     { text: " ", options: { breakLine: true } },
     { text: "Regenerate:", options: { breakLine: true, bold: true } },
     { text: "node scripts/record-demo.mjs" },
