@@ -59,3 +59,8 @@ temp/
 
 # Personal study notes (not part of the submission)
 /STUDY_NOTES.md
+
+# Submission documents (final, 21 Nov 2026) are tracked despite the PDF rule above
+!docs/Project_Report.pdf
+!docs/Final_Report_Full.pdf
+!docs/Final_Presentation.pdf

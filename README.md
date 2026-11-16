@@ -1,142 +1,269 @@
 # Secure Multi-Tenant Identity and Access Platform
 
-Repository: https://github.com/krishnateja2314/iam-provider
+Team **P01-G33** · CS5903 (IIT Hyderabad, 2026) · Krishna Teja (CS23BTECH11028), Jaya Prakash (CS23BTECH11015)
+Repository: https://github.com/krishnateja2314/iam-provider · Final tag: **`cs5903-final-2026`**
 
-Current verified code revision: `e13f019` (clean clone, new volumes, 2026-11-14: 253 passed,
-0 failed, 0 skipped; mutation check 15/15 killed; browser proof 11/11 on two hosts; npm audit 0). Includes the
-AG01 application service principal ([ADR-003](docs/adr/ADR-003-service-principals.md)) and the AG02
-user-delegated agent ([ADR-004](docs/adr/ADR-004-delegated-agents.md)). Final report: `final_report.tex`.
-Earlier: `fde2efd` (227 passed, 7 Nov), `42d8a43` (197 passed, 31 Oct), `0d232ec` (159 passed, 2 Oct).
+An identity and access platform for a multi-tenant learning SaaS. **Keycloak proves who a person or
+program is. Our backend decides, per tenant and per request, what that principal may do.** One
+person can be an admin in one organization and a learner in another, and nothing leaks between them.
+AI agents are first-class principals. An application service principal (AG01) acts as itself with
+one exact grant. A user-delegated agent (AG02) acts for a user with
+*user permission ∩ delegated scope ∩ tenant*, revocable on the next request.
 
-Academic modular-monolith prototype for two synthetic learning organizations.
-Authentication is delegated to Keycloak; tenant membership, resource ownership,
-Casbin authorization, provisioning, consent and audit are application responsibilities.
+## Submission documents
 
-## Read First
+| Deliverable | Location |
+|---|---|
+| A. Project Report (guide format, 8 pages) | [`docs/Project_Report.pdf`](docs/Project_Report.pdf) (source `docs/report/Project_Report.tex`) |
+| B. Architecture Decision Records | [`docs/Architecture_Decision_Records.md`](docs/Architecture_Decision_Records.md) (14 records, incl. the 9 Oct methodology record) |
+| Experimental evaluation (baseline vs solution, raw results, figures) | [`evaluation/README.md`](evaluation/README.md) |
+| Recorded demonstration (100 s, captioned, real stack) | [`docs/demo/demo-walkthrough.mp4`](docs/demo/demo-walkthrough.mp4) · regenerate with `node scripts/record-demo.mjs` |
+| Final presentation | [`docs/Final_Presentation.pptx`](docs/Final_Presentation.pptx) |
+| Full final report (61 pages, 36 issues and fixes) | [`docs/Final_Report_Full.pdf`](docs/Final_Report_Full.pdf) (source `final_report.tex`) |
+| Evidence per revision and date (raw logs) | [`docs/verification-evidence.md`](docs/verification-evidence.md), `docs/evidence/` |
+| Open work | [`docs/open-issues.md`](docs/open-issues.md) / GitHub issues |
 
-- [Whole repository report](docs/repository-report.md): architecture, modules, security decisions and mentor explanations.
-- [Demo guide](docs/demo-guide.md): reproducible tests and evaluator walkthrough.
-- [Presentation guide](docs/presentation-guide.md): plain-English demo script, UI tour, numbers to quote and likely questions.
-- [Requirements matrix](docs/traceability-matrix.md): implemented versus verified requirements.
-- [Evaluation Protocol](docs/evaluation-protocol.md): Frozen acceptance criteria and protocol.
-- [Mentor Responses](docs/mentor-responses.md): Responses to the 8 mentor review questions.
-- [Actual execution evidence](docs/verification-evidence.md): dated per revision, with raw logs in `docs/evidence/`.
-- [Threat model](docs/threat-model.md) and [domain model](docs/domain-model.md).
-- Architecture decisions are in `docs/adr/`.
-- Historical TeX/PDF submissions remain local and are not included in this publication; the current Markdown reports describe the runnable implementation.
+## Current status
 
-## Start From A Clean Checkout
+Verified code revision **`e13f019`** (clean clone, new volumes, 2026-11-14). The final tag adds only
+documentation, evaluation scripts and results. `backend/`, `clients/` and `infrastructure/` are
+unchanged.
 
-Install Docker Desktop with Linux containers. Host Node is only needed for configuration
-and browser proof scripts; backend/database tests run inside Docker.
+| Check | Result |
+|---|---|
+| Full suite, real PostgreSQL + live Keycloak | **253 passed, 0 failed, 0 skipped** |
+| Mutation runner (injected security bugs) | **15 / 15 killed**; database stopped → *inconclusive*, exit 2 |
+| Real-browser proof (PKCE, broker, sessions, AG02) | **11 / 11** on `localhost` and on `127.0.0.1` |
+| `npm audit` | 0 vulnerabilities |
+| Baseline (JWT-only) vs ours, after logout / logout-all / agent disable | baseline accepted the revoked token in 15/15 trials (agent: 59.4 s median); **ours: 401 on the first request in 15/15** |
+
+| Status | Items |
+|---|---|
+| **Completed and verified** | M1 identity and tenant model · M2 sign-in and federation (web, mobile-style client, enterprise broker) · M3 session lifecycle · M4 fine-grained authorization (59 scenarios) · M6 consent and audit · M7 security validation · AG01 · AG02 |
+| **Partial** | M5 provisioning is the agreed minimal slice (no full SCIM) · policy rows cannot be deleted · AG01 grants are DB-only · AG02 uses a custom header, not RFC 8693 |
+| **Pending / not done** | Native mobile apps · real corporate IdP / SAML · production hardening · independent second-machine rerun · CI |
+
+## Architecture summary
+
+Five Docker Compose services: `clients` (static web and mobile-style pages), `keycloak` 26.8.0 with
+its private `keycloak-db`, `backend` (Node 24, Fastify 5, a modular monolith) and `postgres` 16.
+Every protected request passes four stages: (1) verify the JWT, then run *uncached* introspection
+with Keycloak; (2) tenant context: `X-Organization-ID` is untrusted and must match an active
+membership, an AG01 grant or an AG02 delegation; (3) hard boundaries: tenant ownership,
+published-only, teaching relationship, submission owner, delegated scope; (4) Casbin with
+deny-overrides. Every query filters on the organization. Audit rows commit in the same transaction
+as the change. Details: [ADR log](docs/Architecture_Decision_Records.md) ·
+[repository report](docs/repository-report.md) · [threat model](docs/threat-model.md) ·
+[domain model](docs/domain-model.md).
+
+```
+backend/src/modules/  auth · user · organization · authorization · learning-resource · provisioning · audit · service-principal · delegation
+backend/src/db/       5 migrations, idempotent synthetic seed
+backend/tests/        11 test files (253 tests)
+clients/              web.html, mobile.html, app.js, server.mjs
+infrastructure/       Keycloak realm imports (platform + synthetic enterprise IdP)
+scripts/              configure-keycloak, verify-pkce (browser proof), verify-test-independence (mutations), measure-latency, demo-delegation, record-demo
+evaluation/           baseline-vs-solution experiment, clean-state run, raw results, figures
+```
+
+## Prerequisites (pinned)
+
+- Docker Desktop with Linux containers. Images are pinned: `node:24.21.0-alpine`,
+  `postgres:16.15-alpine`, `quay.io/keycloak/keycloak:26.8.0`.
+- Host Node ≥ 24, only for the configuration, browser-proof and demo scripts. Backend
+  dependencies are pinned by `backend/package-lock.json`.
+- Optional: Python 3 with matplotlib (to regenerate figures); Microsoft Edge or Chrome (browser proof).
+- Free local ports 3100, 5173 and 8180 (all bound to 127.0.0.1).
+- No external accounts, API keys or paid services.
+
+## Environment variables
+
+Compose defaults work without a `.env`. [`.env.example`](.env.example) lists every variable with
+safe synthetic values. Copy it to `.env` only to override them. The most relevant are:
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `IAM_PUBLIC_HOST` | `localhost` | Browser-facing host for issuer, API, CORS and clients (for example `127.0.0.1` or a LAN IP) |
+| `KEYCLOAK_INTROSPECTION` | `true` | May be `false` **only** with `NODE_ENV=test`; any other combination refuses to start |
+| `KEYCLOAK_CLIENT_SECRET` / `KEYCLOAK_ADMIN_CLIENT_SECRET` | synthetic | Must match the realm import; changing `.env` does not rotate them |
+| `IAM_ALLOW_PASSWORD_GRANT_TESTS` | `false` | Explicit opt-in for live provider tests (see Test) |
+| `IAM_BROWSER_CHANNEL` | (bundled Chromium) | `msedge` or `chrome` for browser scripts |
+
+## Install, migrate, seed and run
 
 ```powershell
+git clone https://github.com/krishnateja2314/iam-provider.git
+cd iam-provider
+git checkout cs5903-final-2026
 docker compose up -d --build --wait
 ```
 
-The first run imports two realms, migrates PostgreSQL and inserts synthetic fixtures.
-Existing tenant state is preserved on ordinary restarts. If upgrading an existing
-checkout, Keycloak skips existing realm imports. Apply the non-destructive updater:
+The first run imports both realms, runs the five migrations and inserts the synthetic seed.
+Migrations and seed are idempotent and run automatically on every backend start. There is no
+separate migrate step. Expected: five services reported `Healthy` (about 70 s on the reference laptop).
 
-```powershell
-node scripts/configure-keycloak.mjs
-```
-
-Never run `docker compose down -v` on a database you need to preserve. Back up provider
-storage before a Keycloak version upgrade. The local upgrade from 24.0.5 to 26.8.0 was
-performed with a database backup; that private backup is not part of the repository.
-
-| Service | Local address |
+| Service | Address |
 |---|---|
-| API | `http://localhost:3100` |
-| Web demonstration | `http://localhost:5173/web.html` |
-| Mobile-style demonstration | `http://localhost:5173/mobile.html` |
-| Keycloak | `http://localhost:8180` |
-| Application/provider databases | Private Docker network only |
+| Web demo | http://localhost:5173/web.html |
+| Mobile-style demo | http://localhost:5173/mobile.html |
+| API | http://localhost:3100 (`/health`, `/ready`, `/api/v1/*`) |
+| Keycloak | http://localhost:8180 (admin `admin` / `admin_dev_password`, lab only) |
+| Databases | private Docker network only |
 
-All credentials in realm imports and defaults are deliberately public, synthetic,
-development-only fixtures. Do not deploy these HTTP/local credentials publicly.
+### Synthetic users
 
-## Test
+| User | Password | Acme Learning Corp | Globex University |
+|---|---|---|---|
+| alice | `alice123` | admin | learner |
+| bob | `bob123` | instructor (assigned TypeScript course) | — |
+| charlie | `charlie123` | learner | — |
+| diana | `diana123` | — | admin / instructor |
+| eve | `eve123` | inactive learner | — |
+| enterprise.bob | `enterprise-bob123` | via enterprise SSO, linked to bob | — |
+
+Alice also has the Keycloak `platform-admin` role for provisioning only. It never bypasses tenant
+membership.
+
+### Example input and expected output (demo path)
+
+1. Open the web demo and sign in as `alice` (Keycloak login, PKCE).
+2. Select **Acme**, press `GET /members` → **200 Allowed**. Select **Globex**, press `GET /members` → **403 Denied**.
+3. In Globex press `POST /delegations` → **201**. Copy the `delegation.id` from the raw JSON and run:
 
 ```powershell
-docker compose exec -T backend npm run typecheck   # source and tests
-docker compose exec -T backend npm run build
-docker compose exec -T backend npm audit
-docker compose exec -T backend env KEYCLOAK_INTROSPECTION=false RUN_DATABASE_TESTS=1 npm test
-node scripts/verify-test-independence.mjs          # mutation check; needs the running stack
-node scripts/verify-client-config.mjs              # runtime host config; no Docker needed
+node scripts/demo-delegation.mjs <delegation-id> 10000000-0000-0000-0000-000000000002
 ```
 
-`npm test` without live flags is expected to give 188 passed, 9 skipped. The mutation check exits 0 only
-if every mutated security guard is caught by its named tests. It exits 2 (inconclusive) if the
-database is down, the baseline fails, or the container source differs from the checkout.
-`KEYCLOAK_INTROSPECTION=false` is accepted only with `NODE_ENV=test` (the test setup sets it).
-Any other environment refuses to start.
+Expected output:
 
-The last command uses real PostgreSQL and signed local JOSE fixtures. It does not
-disable introspection in the running API process. Live provider lifecycle tests
-are separately gated, and skipped results must not be counted as passes:
+```
+403  GET /resources   without delegation (agent has no authority of its own)
+200  GET /resources   with delegation (N rows)
+200  GET /submissions with delegation (only the delegator's own) (N rows)
+403  GET /members     with delegation (admin action, never delegable)
+403  GET /resources   with delegation in another tenant
+```
+
+After revoking the delegation, the delegated calls return **401**. Clicking *Sign out* makes the
+old access token return 401 on `/api/v1/me`. The whole path is recorded in
+[`docs/demo/demo-walkthrough.mp4`](docs/demo/demo-walkthrough.mp4). Rerecord it with
+`$env:IAM_BROWSER_CHANNEL="msedge"; node scripts/record-demo.mjs` (needs `npm --prefix backend ci`
+and `npx --prefix backend playwright install ffmpeg`). More walkthroughs:
+[demo guide](docs/demo-guide.md), [presentation guide](docs/presentation-guide.md).
+
+## Test (commands and expected outcomes)
+
+```powershell
+docker compose exec -T backend npm run typecheck        # exit 0
+docker compose exec -T backend npm run build            # exit 0
+docker compose exec -T backend npm audit                # found 0 vulnerabilities
+node scripts/verify-client-config.mjs                   # 9 PASS, no Docker needed
+
+docker compose exec -T backend npm test                 # 231 passed, 22 skipped (no DB/provider gates)
+docker compose exec -T backend env KEYCLOAK_INTROSPECTION=false RUN_DATABASE_TESTS=1 npm test
+                                                         # 233 passed, 20 skipped (real PostgreSQL)
+```
+
+Skipped tests are never counted as passes. The complete suite with the live provider needs the
+gated password-grant test client. Enable it, run the suite, then disable it again:
 
 ```powershell
 $env:IAM_ALLOW_PASSWORD_GRANT_TESTS = "true"
 node scripts/configure-keycloak.mjs --enable-test-client
-docker compose exec -T backend env RUN_KEYCLOAK_TESTS=1 npx vitest run tests/security/session-lifecycle.test.ts
+docker compose exec -T backend env KEYCLOAK_INTROSPECTION=false RUN_DATABASE_TESTS=1 RUN_KEYCLOAK_TESTS=1 npm test
+                                                         # 253 passed, 0 failed, 0 skipped
 node scripts/configure-keycloak.mjs
 Remove-Item Env:IAM_ALLOW_PASSWORD_GRANT_TESTS
 ```
 
-For real authorization-code + PKCE browser proof:
+`KEYCLOAK_INTROSPECTION=false` in these commands affects only the test process, which uses signed
+local fixtures. The running API always introspects.
 
 ```powershell
-npm --prefix backend ci
-npx --prefix backend playwright install chromium
-node scripts/verify-pkce.mjs
+node scripts/verify-test-independence.mjs   # mutation check: exit 0 only if 15/15 killed; exit 2 = inconclusive
+npm --prefix backend ci; npx --prefix backend playwright install chromium
+node scripts/verify-pkce.mjs                 # real-browser proof: 11 PASS lines
 ```
 
-## Synthetic Users
+Frozen acceptance criteria: [`docs/evaluation-protocol.md`](docs/evaluation-protocol.md).
+Requirement-to-test mapping: [`docs/traceability-matrix.md`](docs/traceability-matrix.md).
+The end-to-end scenario is the browser proof plus the demo path above. Critical robustness cases
+(cross-tenant IDs, header substitution, suspended members, provider outage, unsafe configuration,
+refresh replay) are in `backend/tests/security/`.
 
-| User | Development password | Acme | Globex |
-|---|---|---|---|
-| alice | `alice123` | admin | learner |
-| bob | `bob123` | instructor, assigned TypeScript course | none |
-| charlie | `charlie123` | learner | none |
-| diana | `diana123` | none | admin/instructor |
-| eve | `eve123` | inactive learner | none |
+## Reproducible experiments
 
-Alice additionally has the explicit Keycloak platform-admin role for provisioning.
-That role does not bypass tenant membership or grant cross-organization course access.
-Enterprise broker users authenticate in a separate synthetic upstream realm; email
-equality never silently merges their application accounts.
+[`evaluation/README.md`](evaluation/README.md) has the evaluation questions, the baseline (JWT-only
+validation), the workloads, the environment, the raw result files and the commands to regenerate
+every number and figure. One command runs everything from a fresh clone with new volumes:
 
-## Security Contract
+```powershell
+docker compose stop      # the clean run uses the same ports
+powershell -ExecutionPolicy Bypass -File evaluation\run-clean-evaluation.ps1 -Revision cs5903-final-2026
+```
 
-- Only RS256 access tokens with required issuer, audience, subject, expiration and
-  `typ=Bearer` are accepted. ID tokens are not API credentials.
-- Every configured API authentication also performs uncached provider introspection.
-  Provider failures deny access with 503 `DEPENDENCY_UNAVAILABLE`. Invalid or inactive tokens get 401.
-  An unsafe security configuration (for example, introspection disabled outside tests) stops the
-  process before it listens.
-- `X-Organization-ID` is untrusted. Active membership and organization status are
-  checked, and resource/submission queries always include organization ownership.
-- Explicit denies override matching allows across roles. Policy rows are reread for
-  subsequent decisions; there is no cross-tenant authorization cache.
-- Sensitive local mutations and their audit event commit together. Remote provider
-  revocations record request/completion separately because they cannot share a DB transaction.
-- Consent is purpose-specific and append-only. Withdrawal of one's own consent is allowed while
-  the membership or organization is suspended. Grants and foreign tenants are denied.
-- A tenant may be provisioned with an email domain and a configured Keycloak broker alias.
-  `GET /api/v1/sso/discover` returns the alias for Keycloak's `kc_idp_hint`. Domains are not DNS-verified.
-- Browser-facing hosts come from `IAM_PUBLIC_HOST` (default `localhost`). See demo guide section 11a.
-- The prototype is not a production deployment: local HTTP, development credentials,
-  bounded provider-admin integration and synthetic datasets require production hardening.
+## Operational handover
 
-## Scope
+| Task | Command |
+|---|---|
+| Start / stop (keeps data) | `docker compose up -d --wait` / `docker compose stop` |
+| Status and health | `docker compose ps`; `curl http://localhost:3100/ready` |
+| Logs | `docker compose logs -f backend` (also `keycloak`, `postgres`, `clients`). Credentials and bodies are redacted |
+| Database shell | `docker compose exec postgres psql -U iam_user -d iam_platform` |
+| Apply realm changes to an existing stack | `node scripts/configure-keycloak.mjs` (non-destructive; `--import-realm` skips existing realms) |
+| **Full reset (deletes all data)** | `docker compose down -v` then `docker compose up -d --build --wait` |
 
-Core human identity and tenant access are the priority. Both agent extensions are built:
-AG01 application service principal ([ADR-003](docs/adr/ADR-003-service-principals.md)) and AG02
-user-delegated agent ([ADR-004](docs/adr/ADR-004-delegated-agents.md)). Full SCIM and performance
-optimisation are not claimed (a latency observation exists). The traceability matrix records remaining verification and implementation gaps.
-The prototype and its demo documentation are published in the repository linked above.
-Local `.env` files, dependencies, compiled output, backups and historical personal reports
-are not included in the published commit.
+Never run `docker compose down -v` on data you need. Back up both databases before a Keycloak
+upgrade.
+
+Troubleshooting:
+- **Every API call returns 503 `DEPENDENCY_UNAVAILABLE`.** Keycloak is down or unreachable, and
+  the API fails closed by design. Check `docker compose ps keycloak` and its logs.
+- **The backend exits with `Startup refused`.** The security configuration is unsafe (for
+  example, introspection disabled outside tests). Fix `.env`.
+- **401 right after login on a changed host.** `IAM_PUBLIC_HOST` changed but the realm was not
+  updated. Run `node scripts/configure-keycloak.mjs`.
+- **Phone over plain HTTP fails at login.** PKCE needs a secure context. Enable Chrome's
+  "Insecure origins treated as secure" flag for the laptop address
+  ([`docs/evidence/2026-11-07/phone-run.md`](docs/evidence/2026-11-07/phone-run.md)).
+- **Browser scripts cannot find Chromium.** Run `npx --prefix backend playwright install chromium`
+  or set `IAM_BROWSER_CHANNEL=msedge`.
+- **Mutation runner exits 2.** The baseline was not green (database down, or the container source
+  differs from the checkout). Rebuild with `docker compose up -d --build --wait`.
+- **A port is already in use.** Ports 3100, 5173 and 8180 are fixed in `docker-compose.yml`. Stop the other service.
+
+External services: none beyond the Compose stack, and there are no costs or quotas. Everything
+runs offline after the images are pulled.
+
+## Security contract (summary)
+
+- Only RS256 access tokens with the required issuer, audience, subject, expiry and `typ=Bearer` are
+  accepted. ID tokens are refused. Every request is introspected without a cache. If the provider
+  fails, the request gets 503 (never allowed). Invalid or inactive tokens get 401.
+- `X-Organization-ID` is untrusted. Active membership and organization status are checked, and
+  every resource or submission query includes the organization.
+- Explicit denies override allows across all of a user's roles. Roles and policies are re-read for
+  every decision; there is no cache.
+- Sensitive mutations and their audit event commit together. Provider-side revocations log
+  separate request and completion events.
+- Consent is purpose-specific and append-only. Withdrawal is allowed while suspended.
+- Identities are keyed by issuer + subject and never merged by email.
+- Agents never get user accounts. AG01 needs an exact grant. AG02 is evaluated as its user, limited
+  to the delegated scopes and tenant, and administrative scopes are never delegable.
+
+## Limitations
+
+This is a local HTTP lab with public synthetic credentials. It is not a production deployment.
+The mobile client is a responsive web page, not a native app. Enterprise SSO brokers to a
+synthetic second realm (no SAML, no DNS-verified domains). Audit is not tamper-evident. In-flight
+requests are not re-checked. Latency figures are sequential single-machine observations. All
+evidence comes from one machine. The full list is in the Project Report §8 and in
+[`docs/open-issues.md`](docs/open-issues.md).
+
+## Safety and provenance
+
+All users, tenants, courses and secrets are synthetic and intended for public use. No real personal
+data, API keys or private credentials are committed. `.env` files, dependencies, build output and
+historical personal reports are not tracked. Third-party components (Keycloak, PostgreSQL,
+Node.js, Fastify, Casbin, jose, Kysely, Vitest, Playwright) are used under their open-source
+licences through official images and the lockfile.

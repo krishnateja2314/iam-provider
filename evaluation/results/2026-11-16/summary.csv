@@ -1,0 +1,5 @@
+operation,trials,valid_before_all,baseline_first_request_accepted,solution_first_request_401,solution_first_request_ms_median,baseline_accepted_requests_after,solution_accepted_requests_after,polls_total,baseline_window_s_median,solution_window_s_median
+provider-logout,5,True,5,5,22,15,0,30,2,0
+admin-logout-all,5,True,5,5,13,15,0,30,2,0
+agent-client-disabled,5,True,5,5,7,298,0,313,59.4,0
+password-reset,5,True,5,0,18,15,15,30,2,2
