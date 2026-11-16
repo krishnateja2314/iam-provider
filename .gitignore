@@ -64,3 +64,6 @@ temp/
 !docs/Project_Report.pdf
 !docs/Final_Report_Full.pdf
 !docs/Final_Presentation.pdf
+
+# Personal presentation script (not part of the submission)
+/docs/presentation-script-8min.md
