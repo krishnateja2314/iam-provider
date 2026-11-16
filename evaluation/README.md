@@ -138,7 +138,7 @@ Get-Content scripts/measure-latency.mjs | docker compose exec -T backend node --
 python evaluation/scripts/make_figures.py evaluation/results/<date>
 
 # Whole clean-state run (fresh clone, new volumes, all checks; stop your normal stack first)
-powershell -ExecutionPolicy Bypass -File evaluation/run-clean-evaluation.ps1 -Revision cs5903-final-2026
+powershell -ExecutionPolicy Bypass -File evaluation/run-clean-evaluation.ps1 -Revision cs5903-final-2026 -BrowserChannel msedge
 ```
 
 The E1 script exits 0 only if every revocation trial gives 401 on the first request and the token

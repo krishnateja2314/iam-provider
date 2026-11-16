@@ -7,7 +7,8 @@
 param(
   [string]$Revision = "HEAD",
   [string]$Repository = (git rev-parse --show-toplevel),
-  [switch]$SkipMutation
+  [switch]$SkipMutation,
+  [string]$BrowserChannel = $env:IAM_BROWSER_CHANNEL
 )
 $ErrorActionPreference = "Continue"
 $date = Get-Date -Format "yyyy-MM-dd"
@@ -40,6 +41,7 @@ try {
   Log "05-latency.log" { Get-Content scripts/measure-latency.mjs | docker compose exec -T backend node --input-type=module - }
   npm --prefix backend ci --silent | Out-Null
   $env:KEYCLOAK_ADMIN_CLIENT_SECRET = "dev-provider-admin-secret"
+  if ($BrowserChannel) { $env:IAM_BROWSER_CHANNEL = $BrowserChannel }
   Log "06-browser-proof.log" { node scripts/verify-pkce.mjs }
   if (-not $SkipMutation) { Log "07-mutation.log" { node scripts/verify-test-independence.mjs } }
 } finally {
